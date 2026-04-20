@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="Illustration of Quran on a stand">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7FA8D7" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#E3F2FD" stop-opacity="0.3"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1200" height="400" fill="url(#bg)"/>
+  <g transform="translate(400,80)" fill="none" stroke="#2D3E50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="0" y="0" width="400" height="160" rx="12" fill="#FFFFFF" opacity="0.85"/>
+    <line x1="20" y1="30" x2="380" y2="30"/>
+    <line x1="20" y1="60" x2="380" y2="60"/>
+    <line x1="20" y1="90" x2="380" y2="90"/>
+    <path d="M0 160 L-60 300 M400 160 L460 300"/>
+    <path d="M-60 300 L60 240 M460 300 L340 240"/>
+  </g>
+  <g transform="translate(820,120)" stroke="#4A6FA5" stroke-width="2" fill="#FFFFFF" opacity="0.9">
+    <circle cx="0" cy="0" r="30"/>
+    <circle cx="60" cy="0" r="30"/>
+    <rect x="-20" y="40" width="140" height="14" rx="7" fill="#4A6FA5" opacity="0.2"/>
+  </g>
+</svg>

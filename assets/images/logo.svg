@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="50" viewBox="0 0 160 50" aria-label="رتل معي">
+  <title>رتل معي</title>
+  <g>
+    <text x="80" y="30" text-anchor="middle" font-family="Amiri, Cairo, Tajawal, serif" font-weight="700" font-size="22" fill="#2D3E50">رتل معي</text>
+    <line x1="40" y1="34" x2="120" y2="34" stroke="#7FA8D7" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>

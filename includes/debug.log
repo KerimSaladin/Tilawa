@@ -1,0 +1,24 @@
+Array
+(
+    [id] => 5
+    [email] => salaheddine.kerim@worldlearningalgeria.org
+    [password_hash] => $2y$10$0aOgM.upKnXFGhgM7csXO.fZUslBwigiP3s3u4Z1p18zbVSD.4M4u
+    [full_name] => Saad Salah Eddine Kerim
+    [user_type] => student
+    [teacher_status] => 
+    [exam_required] => 0
+    [exam_passed] => 0
+    [gender] => male
+    [phone] => 0667863502
+    [quran_certificate] => 
+    [availability_start] => 
+    [availability_end] => 
+    [availability_days] => 
+    [availability_timezone] => UTC
+    [created_at] => 2026-03-06 04:13:06
+    [trial_end_date] => 2026-03-16
+    [subscription_id] => 
+    [is_active] => 1
+    [payment_method_token] => 
+    [stripe_customer_id] => 
+)
