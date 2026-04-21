@@ -1,0 +1,11 @@
+{
+    "name": "tilawa/platform",
+    "description": "Tilawa - Quran Recitation Platform",
+    "require": {
+        "php": ">=8.0",
+        "aws/aws-sdk-php": "^3.0"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

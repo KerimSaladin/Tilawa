@@ -1,0 +1,16 @@
+.env
+uploads/*
+!uploads/.gitkeep
+vendor/
+*.log
+*.rar
+*.zip
+run_sql.bat
+test*.php
+tmp_*.php
+force_db_update.php
+cleanup_script.php
+complete_migration.php
+migrate_*.php
+get_admin.php
+verify_pass.php

@@ -1,0 +1,510 @@
+/* Premium Quote Card Stack Component */
+
+.quote-section {
+    padding: 5rem 2rem;
+    background: linear-gradient(180deg, var(--cream-bg) 0%, rgba(232, 244, 253, 0.3) 50%, var(--cream-bg) 100%);
+    overflow: hidden;
+    position: relative;
+}
+
+.quote-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+        radial-gradient(circle at 20% 30%, rgba(212, 175, 55, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(91, 139, 214, 0.05) 0%, transparent 40%);
+    pointer-events: none;
+}
+
+.quote-container {
+    max-width: 900px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+}
+
+/* Section Title */
+.quote-section-title {
+    text-align: center;
+    font-size: 2.5rem;
+    font-weight: 800;
+    font-family: 'Cairo', 'Tajawal', serif;
+    background: linear-gradient(135deg, var(--deep-blue) 0%, var(--royal-blue) 50%, var(--soft-blue) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 3rem;
+    position: relative;
+}
+
+.quote-section-title::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, var(--primary-gold) 50%, transparent 100%);
+    border-radius: 2px;
+}
+
+/* Layout Controller */
+.layout-controller {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 2.5rem;
+    padding: 0.5rem;
+    background: var(--glass-white);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--glass-border);
+}
+
+.layout-btn {
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    cursor: pointer;
+    color: var(--slate);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.layout-btn:hover {
+    background: rgba(91, 139, 214, 0.1);
+    color: var(--royal-blue);
+    transform: scale(1.05);
+}
+
+.layout-btn.active {
+    background: linear-gradient(135deg, var(--soft-blue) 0%, var(--royal-blue) 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(45, 74, 138, 0.3);
+}
+
+.layout-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Cards Container */
+.cards-wrapper {
+    position: relative;
+    width: 100%;
+    min-height: 400px;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    perspective: 1000px;
+}
+
+/* Layout Styles */
+.cards-wrapper.stack {
+    height: 350px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cards-wrapper.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.cards-wrapper.list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Premium Card Styles */
+.quote-card {
+    background: var(--glass-white);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 24px;
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Card Gradient Accent */
+.quote-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-gold) 0%, var(--soft-blue) 50%, var(--accent-green) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+/* Card Glow Effect */
+.quote-card::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(212, 175, 55, 0.08) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+.quote-card:hover {
+    border-color: rgba(91, 139, 214, 0.3);
+    box-shadow: var(--shadow-lg), 0 0 40px rgba(212, 175, 55, 0.08);
+    transform: translateY(-5px);
+}
+
+.quote-card:hover::before {
+    opacity: 1;
+}
+
+.quote-card:hover::after {
+    opacity: 1;
+}
+
+/* Stack Layout Specifics */
+.cards-wrapper.stack .quote-card {
+    position: absolute;
+    width: 360px;
+    height: 300px;
+    left: 50%;
+    top: 50%;
+    transform-origin: center center;
+    user-select: none;
+    touch-action: none;
+}
+
+.cards-wrapper.stack .quote-card.top-card {
+    cursor: grab;
+    box-shadow: var(--shadow-xl), 0 0 60px rgba(212, 175, 55, 0.1);
+}
+
+.cards-wrapper.stack .quote-card.top-card:active {
+    cursor: grabbing;
+}
+
+/* Grid Layout Specifics */
+.cards-wrapper.grid .quote-card {
+    width: 100%;
+    height: 100%;
+    min-height: 220px;
+}
+
+/* List Layout Specifics */
+.cards-wrapper.list .quote-card {
+    width: 100%;
+    min-height: auto;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.cards-wrapper.list .card-content {
+    flex-direction: row;
+    align-items: center;
+}
+
+/* Card Content */
+.card-content {
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+}
+
+.card-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, rgba(91, 139, 214, 0.15) 0%, rgba(212, 175, 55, 0.1) 100%);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--royal-blue);
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+.quote-card:hover .card-icon {
+    background: linear-gradient(135deg, var(--soft-blue) 0%, var(--royal-blue) 100%);
+    color: white;
+    transform: scale(1.1) rotate(5deg);
+    box-shadow: 0 8px 20px rgba(91, 139, 214, 0.3);
+}
+
+.card-icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+.card-text-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.card-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--charcoal);
+    margin-bottom: 0.75rem;
+    font-family: 'Cairo', 'Tajawal', sans-serif;
+    line-height: 1.3;
+    transition: color 0.3s ease;
+}
+
+.quote-card:hover .card-title {
+    background: linear-gradient(135deg, var(--deep-blue) 0%, var(--royal-blue) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.card-description {
+    font-size: 1rem;
+    color: var(--slate);
+    line-height: 1.8;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-family: 'Amiri', 'Cairo', serif;
+}
+
+.cards-wrapper.stack .card-description {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+}
+
+.cards-wrapper.grid .card-description {
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+}
+
+.cards-wrapper.list .card-description {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+/* Swipe Hint */
+.swipe-hint {
+    position: absolute;
+    bottom: 1rem;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--slate);
+    opacity: 0.5;
+    pointer-events: none;
+    animation: swipeHint 2.5s ease infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.swipe-hint svg {
+    width: 18px;
+    height: 18px;
+    animation: swipeArrow 1.5s ease infinite;
+}
+
+@keyframes swipeHint {
+
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes swipeArrow {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    50% {
+        transform: translateX(5px);
+    }
+}
+
+/* Navigation Dots */
+.stack-nav {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 2.5rem;
+}
+
+.nav-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--sand);
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    border: none;
+    padding: 0;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.nav-dot:hover {
+    background: var(--soft-blue);
+    transform: scale(1.2);
+}
+
+.nav-dot.active {
+    background: linear-gradient(135deg, var(--soft-blue) 0%, var(--royal-blue) 100%);
+    width: 32px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(91, 139, 214, 0.4);
+}
+
+/* Expanded State */
+.quote-card.expanded {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) !important;
+    width: 90%;
+    max-width: 550px;
+    height: auto;
+    min-height: 300px;
+    z-index: 1001;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.25), 0 0 80px rgba(212, 175, 55, 0.1);
+    border: 2px solid var(--primary-gold);
+    cursor: default;
+}
+
+.quote-card.expanded::before {
+    opacity: 1;
+}
+
+.quote-card.expanded .card-description {
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+}
+
+/* Close Button */
+.card-close {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--glass-white);
+    border: 1px solid var(--glass-border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    color: var(--slate);
+}
+
+.card-close:hover {
+    background: var(--charcoal);
+    color: white;
+    transform: rotate(90deg);
+}
+
+.quote-card.expanded .card-close {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Overlay */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(26, 42, 74, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .quote-section {
+        padding: 3rem 1rem;
+    }
+
+    .cards-wrapper.grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cards-wrapper.stack .quote-card {
+        width: 90%;
+        max-width: 320px;
+        height: auto;
+        min-height: 260px;
+    }
+
+    .quote-card {
+        padding: 1.5rem;
+    }
+
+    .card-icon {
+        width: 48px;
+        height: 48px;
+    }
+
+    .card-title {
+        font-size: 1.2rem;
+    }
+
+    .card-description {
+        font-size: 0.95rem;
+    }
+
+    .quote-card.expanded {
+        width: 95%;
+    }
+}
