@@ -20,7 +20,7 @@ COPY . /var/www/html/
 
 # Install PHP dependencies (AWS SDK for R2)
 WORKDIR /var/www/html
-RUN composer require aws/aws-sdk-php:^3.0 --no-interaction --quiet
+RUN COMPOSER_HOME=/tmp/composer composer update --no-dev --no-interaction --optimize-autoloader --no-cache
 
 # Create uploads dir (temp, real storage is R2)
 RUN mkdir -p /var/www/html/uploads && chmod 777 /var/www/html/uploads
