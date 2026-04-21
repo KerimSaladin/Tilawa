@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: tilawa_platform
+      DB_USER: tilawa
+      DB_PASS: ${DB_PASS:-tilawa_secret}
+      R2_KEY: ${R2_KEY}
+      R2_SECRET: ${R2_SECRET}
+      R2_BUCKET: ${R2_BUCKET}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_tmp:/var/www/html/uploads
+
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: tilawa_platform
+      MYSQL_USER: tilawa
+      MYSQL_PASSWORD: ${DB_PASS:-tilawa_secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS:-root_secret}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:
+  uploads_tmp:
