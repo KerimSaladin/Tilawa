@@ -1,0 +1,398 @@
+From fbc73d480efeb968c1180ca202c380ec2a4e0820 Mon Sep 17 00:00:00 2001
+From: Tilawa Deploy <deploy@tilawa.app>
+Date: Wed, 22 Apr 2026 20:49:29 +0000
+Subject: [PATCH] =?UTF-8?q?fix:=20complete=20MySQL=E2=86=92PostgreSQL=20mi?=
+ =?UTF-8?q?gration?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- includes/payment.php: require_once 'config.php' → __DIR__/config.php (CRITICAL: was causing silent fatal errors on all pages except dashboard)
+- includes/auth.php: is_active=TRUE, RETURNING id+fetchColumn, exam_required boolean fix (false→'false' string)
+- includes/functions.php: is_active/is_online booleans, CURDATE→CURRENT_DATE, column_exists schema fix
+- api/update_progress.php: ON DUPLICATE KEY → ON CONFLICT DO UPDATE, remove duplicate params
+- api/rate_teacher.php: is_active=TRUE, ON DUPLICATE KEY → ON CONFLICT
+- api/submit_correction.php: ON DUPLICATE KEY → ON CONFLICT
+- api/upload_recitation.php: is_active=TRUE, RETURNING id+lastval()
+- api/calls.php: RETURNING id+fetchColumn
+- api/messages.php: RETURNING id+fetchColumn
+- api/manage_group.php: is_active=TRUE
+- admin/users.php: 1-is_active → NOT is_active, 1-has_star → NOT has_star
+- admin/teachers.php: 1-has_star → NOT has_star, 1-exam_passed → NOT exam_passed
+- admin/subscriptions.php: CURDATE → CURRENT_DATE
+- call.php: MySQL IF() → CASE WHEN
+- progress.php: SUM(condition) → COUNT FILTER (WHERE ...)
+---
+ admin/subscriptions.php   |  2 +-
+ admin/teachers.php        |  4 ++--
+ admin/users.php           |  4 ++--
+ api/calls.php             |  4 ++--
+ api/manage_group.php      |  2 +-
+ api/messages.php          |  4 ++--
+ api/rate_teacher.php      |  4 ++--
+ api/submit_correction.php |  2 +-
+ api/update_progress.php   |  8 +++-----
+ api/upload_recitation.php |  7 ++++---
+ call.php                  |  2 +-
+ includes/auth.php         |  8 ++++----
+ includes/functions.php    | 18 +++++++++---------
+ includes/payment.php      |  8 ++++----
+ progress.php              |  4 ++--
+ 15 files changed, 40 insertions(+), 41 deletions(-)
+
+diff --git a/admin/subscriptions.php b/admin/subscriptions.php
+index ab6d850..0a50a5a 100644
+--- a/admin/subscriptions.php
++++ b/admin/subscriptions.php
+@@ -38,7 +38,7 @@ $active_subs = $pdo->query("
+     FROM user_subscriptions us
+     JOIN users u ON us.user_id=u.id
+     JOIN subscriptions s ON us.subscription_id=s.id
+-    WHERE us.status='active' AND us.end_date >= CURDATE()
++    WHERE us.status='active' AND us.end_date >= CURRENT_DATE
+     ORDER BY us.created_at DESC
+ ")->fetchAll();
+ 
+diff --git a/admin/teachers.php b/admin/teachers.php
+index 581a2c1..c1ab220 100644
+--- a/admin/teachers.php
++++ b/admin/teachers.php
+@@ -21,10 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+             log_activity($pdo, $user['id'], 'teacher_rejected', 'تم رفض معلم #' . $teacher_id, 'user', $teacher_id);
+             $_SESSION['flash_success'] = 'تم رفض طلب المعلم.';
+         } elseif ($action === 'toggle_star') {
+-            $pdo->prepare("UPDATE users SET has_star = 1 - has_star WHERE id=?")->execute([$teacher_id]);
++            $pdo->prepare("UPDATE users SET has_star = NOT has_star WHERE id=?")->execute([$teacher_id]);
+             $_SESSION['flash_success'] = 'تم تحديث نجمة المعلم.';
+         } elseif ($action === 'toggle_exam') {
+-            $pdo->prepare("UPDATE users SET exam_passed = 1 - exam_passed WHERE id=? AND user_type='teacher'")->execute([$teacher_id]);
++            $pdo->prepare("UPDATE users SET exam_passed = NOT exam_passed WHERE id=? AND user_type='teacher'")->execute([$teacher_id]);
+             $_SESSION['flash_success'] = 'تم تحديث حالة الامتحان.';
+         }
+     }
+diff --git a/admin/users.php b/admin/users.php
+index dc190db..bf90a50 100644
+--- a/admin/users.php
++++ b/admin/users.php
+@@ -13,10 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     $uid     = (int)($_POST['user_id'] ?? 0);
+     if ($uid && $uid !== $user['id']) {
+         if ($action === 'toggle_active') {
+-            $pdo->prepare("UPDATE users SET is_active = 1 - is_active WHERE id=?")->execute([$uid]);
++            $pdo->prepare("UPDATE users SET is_active = NOT is_active WHERE id=?")->execute([$uid]);
+             $_SESSION['flash_success'] = 'تم تحديث حالة المستخدم.';
+         } elseif ($action === 'toggle_star') {
+-            $pdo->prepare("UPDATE users SET has_star = 1 - has_star WHERE id=?")->execute([$uid]);
++            $pdo->prepare("UPDATE users SET has_star = NOT has_star WHERE id=?")->execute([$uid]);
+             $_SESSION['flash_success'] = 'تم تحديث نجمة المستخدم.';
+         } elseif ($action === 'add_wallet') {
+             $amount = (float)($_POST['amount'] ?? 0);
+diff --git a/api/calls.php b/api/calls.php
+index e5ecda3..64e0ddc 100644
+--- a/api/calls.php
++++ b/api/calls.php
+@@ -26,9 +26,9 @@ try {
+             echo json_encode(['success' => false, 'message' => 'مستلم غير صحيح']);
+             exit;
+         }
+-        $stmt = $pdo->prepare("INSERT INTO calls (caller_id, callee_id, type, status) VALUES (?, ?, ?, 'ringing')");
++        $stmt = $pdo->prepare("INSERT INTO calls (caller_id, callee_id, type, status) VALUES (?, ?, ?, 'ringing') RETURNING id");
+         $stmt->execute([$user['id'], $callee_id, $type]);
+-        $call_id = $pdo->lastInsertId();
++        $call_id = $stmt->fetchColumn();
+         echo json_encode(['success' => true, 'call_id' => (int)$call_id]);
+         exit;
+     }
+diff --git a/api/manage_group.php b/api/manage_group.php
+index cbd3077..a324a88 100644
+--- a/api/manage_group.php
++++ b/api/manage_group.php
+@@ -50,7 +50,7 @@ try {
+         }
+         
+         // Verify student exists, is active, and has same gender as teacher
+-        $stmt = $pdo->prepare("SELECT id, gender FROM users WHERE id = ? AND user_type = 'student' AND is_active = 1");
++        $stmt = $pdo->prepare("SELECT id, gender FROM users WHERE id = ? AND user_type = 'student' AND is_active = TRUE");
+         $stmt->execute([$student_id]);
+         $student = $stmt->fetch();
+         
+diff --git a/api/messages.php b/api/messages.php
+index a288d04..6babba2 100644
+--- a/api/messages.php
++++ b/api/messages.php
+@@ -18,9 +18,9 @@ if ($action === 'send') {
+     $receiver_id  = (int)($_POST['receiver_id'] ?? 0);
+     $message_text = trim($_POST['message_text'] ?? '');
+     if (!$receiver_id || !$message_text) { echo json_encode(['success'=>false,'message'=>'بيانات ناقصة']); exit; }
+-    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?,?,?)");
++    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?,?,?) RETURNING id");
+     $stmt->execute([$user['id'], $receiver_id, $message_text]);
+-    $id = $pdo->lastInsertId();
++    $id = $stmt->fetchColumn();
+     echo json_encode(['success'=>true,'id'=>$id,'time'=>date('H:i')]);
+ 
+ } elseif ($action === 'poll') {
+diff --git a/api/rate_teacher.php b/api/rate_teacher.php
+index 052fad3..65c0474 100644
+--- a/api/rate_teacher.php
++++ b/api/rate_teacher.php
+@@ -29,7 +29,7 @@ if ($teacher_id <= 0 || $rating < 1 || $rating > 5) {
+ }
+ 
+ // تحقق من وجود المعلم
+-$stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND is_active=1");
++$stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND is_active=TRUE");
+ $stmt->execute([$teacher_id]);
+ if (!$stmt->fetch()) {
+     echo json_encode(['success'=>false,'message'=>'المعلم غير موجود']); exit;
+@@ -40,7 +40,7 @@ try {
+     $stmt = $pdo->prepare("
+         INSERT INTO ratings (student_id, teacher_id, rating, comment)
+         VALUES (?, ?, ?, ?)
+-        ON DUPLICATE KEY UPDATE rating=VALUES(rating), comment=VALUES(comment)
++        ON CONFLICT (student_id, teacher_id) DO UPDATE SET rating=EXCLUDED.rating, comment=EXCLUDED.comment
+     ");
+     $stmt->execute([$user['id'], $teacher_id, $rating, $comment ?: null]);
+     echo json_encode(['success'=>true,'message'=>'تم إرسال تقييمك بنجاح!']);
+diff --git a/api/submit_correction.php b/api/submit_correction.php
+index ef921c9..7a27583 100644
+--- a/api/submit_correction.php
++++ b/api/submit_correction.php
+@@ -62,7 +62,7 @@ try {
+         $r = $rec->fetch();
+         if ($r) {
+             $pdo->prepare("INSERT INTO progress (student_id,surah_name,memorized_verses,total_verses) VALUES (?,?,1,1)
+-                ON DUPLICATE KEY UPDATE memorized_verses=memorized_verses+1, last_updated=CURRENT_TIMESTAMP")
++                ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=progress.memorized_verses+1, last_updated=CURRENT_TIMESTAMP")
+                 ->execute([$r['student_id'], $r['surah_name']]);
+         }
+     }
+diff --git a/api/update_progress.php b/api/update_progress.php
+index d5d83fa..2bf6ebf 100644
+--- a/api/update_progress.php
++++ b/api/update_progress.php
+@@ -41,9 +41,9 @@ try {
+     $stmt = $pdo->prepare("
+         INSERT INTO progress (student_id, surah_name, memorized_verses, total_verses)
+         VALUES (?, ?, ?, ?)
+-        ON DUPLICATE KEY UPDATE 
+-            memorized_verses = ?,
+-            total_verses = ?,
++        ON CONFLICT (student_id, surah_name) DO UPDATE SET
++            memorized_verses = EXCLUDED.memorized_verses,
++            total_verses = EXCLUDED.total_verses,
+             last_updated = CURRENT_TIMESTAMP
+     ");
+     
+@@ -51,8 +51,6 @@ try {
+         $student_id,
+         $surah_name,
+         $memorized_verses,
+-        $total_verses,
+-        $memorized_verses,
+         $total_verses
+     ]);
+     
+diff --git a/api/upload_recitation.php b/api/upload_recitation.php
+index fa48f76..eda90b1 100644
+--- a/api/upload_recitation.php
++++ b/api/upload_recitation.php
+@@ -56,15 +56,16 @@ try {
+ 
+     // Validate teacher
+     if ($teacher_id) {
+-        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active=1");
++        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active=TRUE");
+         $stmt->execute([$teacher_id]);
+         if (!$stmt->fetch()) $teacher_id = null;
+     }
+ 
+-    $pdo->prepare("INSERT INTO recitations (student_id,teacher_id,surah_name,ayah_range,audio_file_path,video_file_path,status) VALUES (?,?,?,?,?,?,'pending')")
++    $pdo->prepare("INSERT INTO recitations (student_id,teacher_id,surah_name,ayah_range,audio_file_path,video_file_path,status) VALUES (?,?,?,?,?,?,'pending') RETURNING id")
+         ->execute([$user['id'], $teacher_id, $surah_name, $ayah_range ?: null, $audio_path, $video_path]);
+ 
+-    send_json(['success'=>true,'message'=>'تم رفع التلاوة بنجاح! سيراجعها المعلم قريباً.','recitation_id'=>$pdo->lastInsertId()]);
++    $recitation_id = $pdo->query("SELECT lastval()")->fetchColumn();
++    send_json(['success'=>true,'message'=>'تم رفع التلاوة بنجاح! سيراجعها المعلم قريباً.','recitation_id'=>$recitation_id]);
+ 
+ } catch (Throwable $e) {
+     send_json(['success'=>false,'message'=>$e->getMessage()]);
+diff --git a/call.php b/call.php
+index e3874c0..a95a011 100644
+--- a/call.php
++++ b/call.php
+@@ -23,7 +23,7 @@ if ($session_id) {
+         $gs = $stmt->fetch();
+         if ($gs) $session_title = $gs['title'];
+     } else {
+-        $stmt = $pdo->prepare("SELECT u.full_name FROM live_sessions ls JOIN users u ON u.id=IF(ls.teacher_id=?,ls.student_id,ls.teacher_id) WHERE ls.id=?");
++        $stmt = $pdo->prepare("SELECT u.full_name FROM live_sessions ls JOIN users u ON u.id=CASE WHEN ls.teacher_id=? THEN ls.student_id ELSE ls.teacher_id END WHERE ls.id=?");
+         $stmt->execute([$user['id'], $session_id]);
+         $ls = $stmt->fetch();
+         if ($ls) $session_title = 'جلسة مع ' . $ls['full_name'];
+diff --git a/includes/auth.php b/includes/auth.php
+index 939a729..fbdbb07 100644
+--- a/includes/auth.php
++++ b/includes/auth.php
+@@ -6,7 +6,7 @@ require_once __DIR__ . '/functions.php';
+  * Login user
+  */
+ function login_user($pdo, $email, $password) {
+-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_active = 1");
++    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_active = TRUE");
+     $stmt->execute([$email]);
+     $user = $stmt->fetch();
+     
+@@ -107,7 +107,7 @@ function register_user($pdo, $data) {
+         $data['full_name'],
+         $user_type,
+         $teacher_status,
+-        $exam_required ? 1 : 0,
++        $exam_required ? 'true' : 'false',
+         $data['gender'],
+         $data['phone'] ?? null,
+         null,
+@@ -118,13 +118,13 @@ function register_user($pdo, $data) {
+         $place[] = '?';
+         $params[] = $payment_token;
+     }
+-    $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ")";
++    $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ") RETURNING id";
+     $stmt = $pdo->prepare($sql);
+     
+     try {
+         $stmt->execute($params);
+         
+-        $user_id = $pdo->lastInsertId();
++        $user_id = $stmt->fetchColumn();
+         
+         // Upload certificate if teacher and certificate provided
+         if ($user_type === 'teacher' && $has_certificate) {
+diff --git a/includes/functions.php b/includes/functions.php
+index 2f59b9b..8eb0a37 100644
+--- a/includes/functions.php
++++ b/includes/functions.php
+@@ -26,7 +26,7 @@ function get_logged_in_user($pdo) {
+         return null;
+     }
+     
+-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND is_active = 1");
++    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND is_active = TRUE");
+     $stmt->execute([$_SESSION['user_id']]);
+     return $stmt->fetch();
+ }
+@@ -87,7 +87,7 @@ function get_subscription_status($pdo, $user_id) {
+         SELECT us.*, s.name_ar, s.name 
+         FROM user_subscriptions us
+         JOIN subscriptions s ON us.subscription_id = s.id
+-        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURDATE()
++        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURRENT_DATE
+         ORDER BY us.end_date DESC
+         LIMIT 1
+     ");
+@@ -119,7 +119,7 @@ function is_trial_active($pdo, $user_id) {
+ function has_active_access($pdo, $user_id) {
+     // الاشتراك اختياري — يمنح خصم 15% فقط
+     // جميع المستخدمين المسجلين لديهم وصول كامل
+-    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = 1");
++    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = TRUE");
+     $stmt->execute([$user_id]);
+     $user = $stmt->fetch();
+     return (bool)$user; // أي مستخدم نشط لديه وصول
+@@ -493,8 +493,8 @@ function get_teacher_files($pdo, $teacher_id = null) {
+ }
+ 
+ function column_exists($pdo, $table, $column) {
+-    $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+-    $stmt->execute([DB_NAME, $table, $column]);
++    $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = ?");
++    $stmt->execute([$table, $column]);
+     $row = $stmt->fetch();
+     return isset($row['c']) && (int)$row['c'] > 0;
+ }
+@@ -505,7 +505,7 @@ function column_exists($pdo, $table, $column) {
+ function update_teacher_online_status($pdo, $teacher_id) {
+     $stmt = $pdo->prepare("
+         UPDATE users 
+-        SET is_online = 1, last_seen = CURRENT_TIMESTAMP 
++        SET is_online = TRUE, last_seen = CURRENT_TIMESTAMP 
+         WHERE id = ? AND user_type = 'teacher'
+     ");
+     return $stmt->execute([$teacher_id]);
+@@ -543,7 +543,7 @@ function is_teacher_online($pdo, $teacher_id) {
+ function mark_teacher_offline($pdo, $teacher_id) {
+     $stmt = $pdo->prepare("
+         UPDATE users 
+-        SET is_online = 0 
++        SET is_online = FALSE 
+         WHERE id = ? AND user_type = 'teacher'
+     ");
+     return $stmt->execute([$teacher_id]);
+@@ -555,9 +555,9 @@ function mark_teacher_offline($pdo, $teacher_id) {
+ function cleanup_offline_teachers($pdo) {
+     $stmt = $pdo->prepare("
+         UPDATE users 
+-        SET is_online = 0 
++        SET is_online = FALSE 
+         WHERE user_type = 'teacher' 
+-        AND is_online = 1 
++        AND is_online = TRUE 
+         AND last_seen < NOW() - INTERVAL '2 minutes'
+     ");
+     return $stmt->execute();
+diff --git a/includes/payment.php b/includes/payment.php
+index e51fbf9..022f377 100644
+--- a/includes/payment.php
++++ b/includes/payment.php
+@@ -1,6 +1,6 @@
+ <?php
+-require_once 'config.php';
+-require_once 'functions.php';
++require_once __DIR__ . '/config.php';
++require_once __DIR__ . '/functions.php';
+ 
+ /**
+  * Format amount with thousands separator for Algerian Dinar
+@@ -183,7 +183,7 @@ function has_active_platform_subscription($pdo, $user_id) {
+ 
+     $stmt = $pdo->prepare("
+         SELECT us.id FROM user_subscriptions us
+-        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURDATE()
++        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURRENT_DATE
+         LIMIT 1
+     ");
+     $stmt->execute([$user_id]);
+@@ -197,7 +197,7 @@ function get_user_subscription($pdo, $user_id) {
+     $stmt = $pdo->prepare("
+         SELECT us.*, s.name_ar, s.name FROM user_subscriptions us
+         JOIN subscriptions s ON us.subscription_id=s.id
+-        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURDATE()
++        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURRENT_DATE
+         ORDER BY us.end_date DESC LIMIT 1
+     ");
+     $stmt->execute([$user_id]);
+diff --git a/progress.php b/progress.php
+index fcf8297..1ce809c 100644
+--- a/progress.php
++++ b/progress.php
+@@ -44,7 +44,7 @@ if ($user['user_type'] === 'student') {
+     $rec_stats = $pdo->prepare("
+         SELECT
+             COUNT(*) as total,
+-            SUM(status='reviewed' OR status='approved') as reviewed,
++            COUNT(*) FILTER (WHERE r.status IN ('reviewed', 'approved')) as reviewed,
+             COALESCE(AVG(c.rating),0) as avg_rating
+         FROM recitations r
+         LEFT JOIN corrections c ON r.id=c.recitation_id
+@@ -133,7 +133,7 @@ if ($user['user_type'] === 'teacher') {
+         SELECT
+             u.id as student_id, u.full_name as student_name,
+             COUNT(r.id) as total_recitations,
+-            SUM(r.status IN ('reviewed','approved')) as reviewed_count,
++            COUNT(r.id) FILTER (WHERE r.status IN ('reviewed','approved')) as reviewed_count,
+             COALESCE(AVG(c.rating),0) as avg_rating,
+             MAX(r.uploaded_at) as last_activity
+         FROM users u
+-- 
+2.43.0
+

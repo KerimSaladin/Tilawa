@@ -56,15 +56,16 @@ try {
 
     // Validate teacher
     if ($teacher_id) {
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active=1");
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active=TRUE");
         $stmt->execute([$teacher_id]);
         if (!$stmt->fetch()) $teacher_id = null;
     }
 
-    $pdo->prepare("INSERT INTO recitations (student_id,teacher_id,surah_name,ayah_range,audio_file_path,video_file_path,status) VALUES (?,?,?,?,?,?,'pending')")
+    $pdo->prepare("INSERT INTO recitations (student_id,teacher_id,surah_name,ayah_range,audio_file_path,video_file_path,status) VALUES (?,?,?,?,?,?,'pending') RETURNING id")
         ->execute([$user['id'], $teacher_id, $surah_name, $ayah_range ?: null, $audio_path, $video_path]);
 
-    send_json(['success'=>true,'message'=>'تم رفع التلاوة بنجاح! سيراجعها المعلم قريباً.','recitation_id'=>$pdo->lastInsertId()]);
+    $recitation_id = $pdo->query("SELECT lastval()")->fetchColumn();
+    send_json(['success'=>true,'message'=>'تم رفع التلاوة بنجاح! سيراجعها المعلم قريباً.','recitation_id'=>$recitation_id]);
 
 } catch (Throwable $e) {
     send_json(['success'=>false,'message'=>$e->getMessage()]);
