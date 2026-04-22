@@ -107,7 +107,7 @@ function register_user($pdo, $data) {
         $data['full_name'],
         $user_type,
         $teacher_status,
-        $exam_required ? true : false,
+        $exam_required ? 'true' : 'false',
         $data['gender'],
         $data['phone'] ?? null,
         null,

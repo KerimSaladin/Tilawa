@@ -44,7 +44,7 @@ if ($user['user_type'] === 'student') {
     $rec_stats = $pdo->prepare("
         SELECT
             COUNT(*) as total,
-            SUM(status='reviewed' OR status='approved') as reviewed,
+            COUNT(*) FILTER (WHERE r.status IN ('reviewed', 'approved')) as reviewed,
             COALESCE(AVG(c.rating),0) as avg_rating
         FROM recitations r
         LEFT JOIN corrections c ON r.id=c.recitation_id
@@ -133,7 +133,7 @@ if ($user['user_type'] === 'teacher') {
         SELECT
             u.id as student_id, u.full_name as student_name,
             COUNT(r.id) as total_recitations,
-            SUM(r.status IN ('reviewed','approved')) as reviewed_count,
+            COUNT(r.id) FILTER (WHERE r.status IN ('reviewed','approved')) as reviewed_count,
             COALESCE(AVG(c.rating),0) as avg_rating,
             MAX(r.uploaded_at) as last_activity
         FROM users u
