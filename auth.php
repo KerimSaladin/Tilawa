@@ -115,7 +115,6 @@ function register_user($pdo, $data) {
     ];
     $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ") RETURNING id";
     $stmt = $pdo->prepare($sql);
-    
     try {
         $stmt->execute($params);
         $user_id = $stmt->fetchColumn();

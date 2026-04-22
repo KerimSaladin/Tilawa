@@ -1,12 +1,16 @@
 <?php
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 error_reporting(E_ALL);
 ob_start();
+
+try {
 require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/functions.php';
 require_once 'includes/payment.php';
+
+if (!$pdo) { http_response_code(500); die('DB connection failed'); }
 
 require_login();
 $user = get_logged_in_user($pdo);
@@ -742,6 +746,15 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 });
 </script>
 <script src="assets/js/dashboard.js"></script>
-<?php ob_end_flush(); ?>
+<?php
+} catch (Throwable $e) {
+    ob_end_clean();
+    error_log('dashboard.php fatal: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+    echo '<pre style="color:red;padding:20px">Dashboard Error: ' . htmlspecialchars($e->getMessage()) . "
+" . htmlspecialchars($e->getFile()) . ':' . $e->getLine() . '</pre>';
+    exit;
+}
+ob_end_flush();
+?>
 </body>
 </html>
