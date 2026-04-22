@@ -40,13 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['user_type'] === 'teacher') {
                     VALUES (?,?,?,?,?,?,'scheduled')
                 ")->execute([$user['id'], $title, $description, $start_dt, $duration, $max_students]);
             } else {
-                $pdo->prepare("
+                $stmt_ls = $pdo->prepare("
                     INSERT INTO live_sessions (teacher_id, student_id, status, start_time)
-                    VALUES (?, NULL, 'available', ?)
-                ")->execute([$user['id'], $start_dt]);
-                // update duration in same row
-                $lid = $pdo->lastInsertId();
-                $pdo->prepare("UPDATE live_sessions SET end_time = DATE_ADD(start_time, INTERVAL ? MINUTE) WHERE id=?")
+                    VALUES (?, NULL, 'available', ?) RETURNING id
+                ");
+                $stmt_ls->execute([$user['id'], $start_dt]);
+                $lid = $stmt_ls->fetchColumn();
+                $pdo->prepare("UPDATE live_sessions SET end_time = start_time + (? * INTERVAL '1 minute') WHERE id=?")
                     ->execute([$duration, $lid]);
             }
             $flash = ['type'=>'success','msg'=>'تم إضافة الموعد بنجاح!'];
