@@ -29,7 +29,7 @@ $teachers = $pdo->prepare("
            (SELECT COUNT(DISTINCT student_id) FROM recitations rec2 WHERE rec2.teacher_id=u.id) as total_students
     FROM users u
     LEFT JOIN ratings r ON u.id = r.teacher_id
-    WHERE u.user_type='teacher' AND u.teacher_status='approved' AND u.is_active=1
+    WHERE u.user_type='teacher' AND u.teacher_status='approved' AND u.is_active = TRUE
     GROUP BY u.id
     ORDER BY avg_rating DESC, total_sessions DESC
 ");

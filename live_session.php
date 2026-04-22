@@ -149,7 +149,7 @@ if ($user['user_type'] === 'teacher') {
     $my_students = $pdo->prepare("
         SELECT DISTINCT u.id, u.full_name
         FROM users u
-        WHERE u.user_type='student' AND u.is_active=1
+        WHERE u.user_type='student' AND u.is_active = TRUE
         AND u.id IN (
             SELECT DISTINCT student_id FROM recitations WHERE teacher_id=?
             UNION SELECT DISTINCT student_id FROM enrollments WHERE teacher_id=?

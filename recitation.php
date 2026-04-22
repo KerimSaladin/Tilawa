@@ -37,7 +37,7 @@ $recitation_id = $_GET['id'] ?? null;
 // Get teachers list for students (all approved teachers)
 $teachers = [];
 if ($user['user_type'] === 'student') {
-    $stmt = $pdo->prepare("SELECT id, full_name FROM users WHERE user_type = 'teacher' AND is_active = 1 AND teacher_status = 'approved'");
+    $stmt = $pdo->prepare("SELECT id, full_name FROM users WHERE user_type = 'teacher' AND is_active = TRUE AND teacher_status = 'approved'");
     $stmt->execute();
     $teachers = $stmt->fetchAll();
 }
@@ -71,7 +71,7 @@ if ($user['user_type'] === 'teacher' && $view === 'students') {
                (SELECT COUNT(*) FROM recitations r2 WHERE r2.student_id=u.id AND r2.teacher_id=?) as total_recitations,
                (SELECT COUNT(*) FROM recitations r3 WHERE r3.student_id=u.id AND r3.teacher_id=? AND r3.status='pending') as pending_count
         FROM users u
-        WHERE u.user_type='student' AND u.is_active=1
+        WHERE u.user_type='student' AND u.is_active = TRUE
         AND u.id IN (
             SELECT DISTINCT student_id FROM recitations WHERE teacher_id=?
             UNION

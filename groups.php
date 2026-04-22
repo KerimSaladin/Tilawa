@@ -96,10 +96,10 @@ foreach ($groups as &$group) {
 
 // Get all students (filter by gender only if teacher has gender set)
 if (!empty($user['gender'])) {
-    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = 1 AND (gender = ? OR gender IS NULL) ORDER BY full_name");
+    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = TRUE AND (gender = ? OR gender IS NULL) ORDER BY full_name");
     $stmt->execute([$user['gender']]);
 } else {
-    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = 1 ORDER BY full_name");
+    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = TRUE ORDER BY full_name");
     $stmt->execute();
 }
 $all_students = $stmt->fetchAll();

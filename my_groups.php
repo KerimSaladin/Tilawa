@@ -47,7 +47,7 @@ $available = $pdo->prepare("
            (SELECT COUNT(*) FROM group_members gm3 WHERE gm3.group_id=g.id AND gm3.student_id=?) as is_member
     FROM groups g
     JOIN users u ON g.teacher_id=u.id
-    WHERE u.teacher_status='approved' AND u.is_active=1
+    WHERE u.teacher_status='approved' AND u.is_active = TRUE
     ORDER BY g.created_at DESC
 ");
 $available->execute([$user['id']]);

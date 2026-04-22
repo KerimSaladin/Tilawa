@@ -85,7 +85,7 @@ if ($user['user_type'] === 'teacher') {
     $stmt = $pdo->prepare("
         SELECT u.*, COALESCE(AVG(r.rating),0) as avg_rating, COUNT(r.id) as rating_count
         FROM users u LEFT JOIN ratings r ON u.id=r.teacher_id
-        WHERE u.user_type='teacher' AND u.teacher_status='approved' AND u.is_active=1
+        WHERE u.user_type='teacher' AND u.teacher_status='approved' AND u.is_active = TRUE
         GROUP BY u.id ORDER BY avg_rating DESC, u.created_at ASC LIMIT 12");
     $stmt->execute(); $teachers = $stmt->fetchAll();
 

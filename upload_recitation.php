@@ -56,7 +56,7 @@ try {
 
     // Validate teacher
     if ($teacher_id) {
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active=1");
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND teacher_status='approved' AND is_active = TRUE");
         $stmt->execute([$teacher_id]);
         if (!$stmt->fetch()) $teacher_id = null;
     }

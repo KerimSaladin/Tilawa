@@ -26,7 +26,7 @@ function get_logged_in_user($pdo) {
         return null;
     }
     
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND is_active = 1");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND is_active = TRUE");
     $stmt->execute([$_SESSION['user_id']]);
     return $stmt->fetch();
 }
@@ -119,7 +119,7 @@ function is_trial_active($pdo, $user_id) {
 function has_active_access($pdo, $user_id) {
     // الاشتراك اختياري — يمنح خصم 15% فقط
     // جميع المستخدمين المسجلين لديهم وصول كامل
-    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = 1");
+    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = TRUE");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch();
     return (bool)$user; // أي مستخدم نشط لديه وصول
@@ -504,7 +504,7 @@ function column_exists($pdo, $table, $column) {
 function update_teacher_online_status($pdo, $teacher_id) {
     $stmt = $pdo->prepare("
         UPDATE users 
-        SET is_online = 1, last_seen = CURRENT_TIMESTAMP 
+        SET is_online = TRUE, last_seen = CURRENT_TIMESTAMP 
         WHERE id = ? AND user_type = 'teacher'
     ");
     return $stmt->execute([$teacher_id]);
@@ -533,7 +533,7 @@ function is_teacher_online($pdo, $teacher_id) {
         return $last_seen >= $two_minutes_ago;
     }
     
-    return $teacher['is_online'] == 1;
+    return $teacher['is_online'] == true;
 }
 
 /**
@@ -542,7 +542,7 @@ function is_teacher_online($pdo, $teacher_id) {
 function mark_teacher_offline($pdo, $teacher_id) {
     $stmt = $pdo->prepare("
         UPDATE users 
-        SET is_online = 0 
+        SET is_online = FALSE 
         WHERE id = ? AND user_type = 'teacher'
     ");
     return $stmt->execute([$teacher_id]);
@@ -554,9 +554,9 @@ function mark_teacher_offline($pdo, $teacher_id) {
 function cleanup_offline_teachers($pdo) {
     $stmt = $pdo->prepare("
         UPDATE users 
-        SET is_online = 0 
+        SET is_online = FALSE 
         WHERE user_type = 'teacher' 
-        AND is_online = 1 
+        AND is_online = TRUE 
         AND last_seen < NOW() - INTERVAL '2 minutes'
     ");
     return $stmt->execute();
