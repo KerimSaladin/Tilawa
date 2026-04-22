@@ -65,37 +65,33 @@ if ($user['user_type'] === 'student') {
                 $pdo->prepare("
                     INSERT INTO progress (student_id, teacher_id, surah_name, memorized_verses, total_verses, completion_pct)
                     VALUES (?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE memorized_verses=?, total_verses=?, completion_pct=?, last_updated=NOW()
+                    ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=EXCLUDED.memorized_verses, total_verses=EXCLUDED.total_verses, completion_pct=EXCLUDED.completion_pct, last_updated=CURRENT_TIMESTAMP
                 ")->execute([
-                    $user['id'], $tid, $surah, $mem, $total, $pct,
-                    $mem, $total, $pct
+                    $user['id'], $tid, $surah, $mem, $total, $pct
                 ]);
             } elseif ($progress_has_teacher_id) {
                 $pdo->prepare("
                     INSERT INTO progress (student_id, teacher_id, surah_name, memorized_verses, total_verses)
                     VALUES (?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE memorized_verses=?, total_verses=?, last_updated=NOW()
+                    ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=EXCLUDED.memorized_verses, total_verses=EXCLUDED.total_verses, last_updated=CURRENT_TIMESTAMP
                 ")->execute([
-                    $user['id'], $tid, $surah, $mem, $total,
-                    $mem, $total
+                    $user['id'], $tid, $surah, $mem, $total
                 ]);
             } elseif ($progress_has_completion_pct) {
                 $pdo->prepare("
                     INSERT INTO progress (student_id, surah_name, memorized_verses, total_verses, completion_pct)
                     VALUES (?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE memorized_verses=?, total_verses=?, completion_pct=?, last_updated=NOW()
+                    ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=EXCLUDED.memorized_verses, total_verses=EXCLUDED.total_verses, completion_pct=EXCLUDED.completion_pct, last_updated=CURRENT_TIMESTAMP
                 ")->execute([
-                    $user['id'], $surah, $mem, $total, $pct,
-                    $mem, $total, $pct
+                    $user['id'], $surah, $mem, $total, $pct
                 ]);
             } else {
                 $pdo->prepare("
                     INSERT INTO progress (student_id, surah_name, memorized_verses, total_verses)
                     VALUES (?,?,?,?)
-                    ON DUPLICATE KEY UPDATE memorized_verses=?, total_verses=?, last_updated=NOW()
+                    ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=EXCLUDED.memorized_verses, total_verses=EXCLUDED.total_verses, last_updated=CURRENT_TIMESTAMP
                 ")->execute([
-                    $user['id'], $surah, $mem, $total,
-                    $mem, $total
+                    $user['id'], $surah, $mem, $total
                 ]);
             }
             header('Location: progress.php'); exit;
@@ -108,10 +104,10 @@ if ($user['user_type'] === 'student') {
         $tot = (int)$_POST['total_verses'];
         $pct = $tot > 0 ? round($mem/$tot*100,1) : 0;
         if ($progress_has_completion_pct) {
-            $pdo->prepare("UPDATE progress SET memorized_verses=?, total_verses=?, completion_pct=?, last_updated=NOW() WHERE id=? AND student_id=?")
+            $pdo->prepare("UPDATE progress SET memorized_verses=?, total_verses=?, completion_pct=?, last_updated=CURRENT_TIMESTAMP WHERE id=? AND student_id=?")
                 ->execute([$mem, $tot, $pct, $pid, $user['id']]);
         } else {
-            $pdo->prepare("UPDATE progress SET memorized_verses=?, total_verses=?, last_updated=NOW() WHERE id=? AND student_id=?")
+            $pdo->prepare("UPDATE progress SET memorized_verses=?, total_verses=?, last_updated=CURRENT_TIMESTAMP WHERE id=? AND student_id=?")
                 ->execute([$mem, $tot, $pid, $user['id']]);
         }
         header('Location: progress.php'); exit;

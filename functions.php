@@ -87,7 +87,7 @@ function get_subscription_status($pdo, $user_id) {
         SELECT us.*, s.name_ar, s.name 
         FROM user_subscriptions us
         JOIN subscriptions s ON us.subscription_id = s.id
-        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURDATE()
+        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURRENT_DATE
         ORDER BY us.end_date DESC
         LIMIT 1
     ");
