@@ -5,6 +5,11 @@ require_once 'includes/auth.php';
 $error = '';
 $success = '';
 
+if (!$pdo) {
+    http_response_code(500);
+    die('Database connection failed. Check Render logs.');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = [
         'email' => sanitize_input($_POST['email'] ?? ''),
