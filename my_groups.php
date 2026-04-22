@@ -15,7 +15,7 @@ $flash = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_group'])) {
     $group_id = (int)$_POST['group_id'];
     try {
-        $pdo->prepare("INSERT IGNORE INTO group_members (group_id, student_id) VALUES (?,?)")->execute([$group_id, $user['id']]);
+        $pdo->prepare("INSERT INTO group_members (group_id, student_id) VALUES (?,?) ON CONFLICT DO NOTHING")->execute([$group_id, $user['id']]);
         $flash = ['type'=>'success','msg'=>'تم الانضمام للمجموعة بنجاح!'];
     } catch (Exception $e) {
         $flash = ['type'=>'error','msg'=>'حدث خطأ أثناء الانضمام'];

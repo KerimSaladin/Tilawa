@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['user_type'] === 'student') {
             $flash = ['type'=>'error','msg'=>'الجلسة ممتلئة'];
         } else {
             try {
-                $pdo->prepare("INSERT IGNORE INTO group_session_participants (session_id, student_id) VALUES (?,?)")->execute([$gid, $user['id']]);
+                $pdo->prepare("INSERT INTO group_session_participants (session_id, student_id) VALUES (?,?) ON CONFLICT DO NOTHING")->execute([$gid, $user['id']]);
                 $flash = ['type'=>'success','msg'=>'تم التسجيل في الجلسة بنجاح!'];
             } catch (Exception $e) {
                 $flash = ['type'=>'error','msg'=>'تعذّر الانضمام'];

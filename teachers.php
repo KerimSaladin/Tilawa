@@ -12,7 +12,7 @@ if (!$user || $user['user_type'] !== 'student') redirect('dashboard.php');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_group'])) {
     $gid = (int)$_POST['group_id'];
     try {
-        $pdo->prepare("INSERT IGNORE INTO group_members (group_id, student_id) VALUES (?,?)")->execute([$gid, $user['id']]);
+        $pdo->prepare("INSERT INTO group_members (group_id, student_id) VALUES (?,?) ON CONFLICT DO NOTHING")->execute([$gid, $user['id']]);
         $_SESSION['flash'] = ['type'=>'success','msg'=>'تم الانضمام للمجموعة بنجاح!'];
     } catch (Exception $e) {
         $_SESSION['flash'] = ['type'=>'error','msg'=>'حدث خطأ'];
