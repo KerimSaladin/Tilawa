@@ -1,0 +1,46 @@
+# Tilawa Platform (رتل معي) - Project Description
+
+## Overview
+Tilawa is a comprehensive Quran recitation and learning platform designed to connect students with qualified teachers for recitation practice, correction, and live learning sessions. It features a modern, RTL-supported UI with both audio and video capabilities.
+
+## Technical Architecture
+- **Backend:** PHP (Procedural/Functional architecture), running on XAMPP (Apache/MySQL).
+- **Database:** MySQL (Relational schema with 15+ tables including users, recitations, messages, calls, sessions, etc.).
+- **Frontend:** Vanilla HTML5, CSS3 (with advanced animations and dashboard styles), and pure JavaScript.
+- **Media Processing:** Uses FFmpeg for server-side audio/video processing and conversion.
+- **Real-Time Communication:** Custom WebRTC implementation for voice and video calls with a polling-based signaling layer.
+
+## Core Features
+1. **User Management:**
+   - Multi-role system: Students, Teachers, and Administrators.
+   - Teacher verification flow: Status tracking (pending/approved) and certificate uploads.
+   - Trial periods and subscription management (Standard, Gold, Premium plans).
+
+2. **Quran Recitation & Correction:**
+   - Students can upload audio/video recitations of specific Surahs and Ayah ranges.
+   - Teachers review recitations and provide feedback via text or voice messages.
+   - Progress tracking for memorization and improvement.
+
+3. **Communication System:**
+   - One-to-one text and voice messaging between students and teachers.
+   - Real-time voice and video calls using WebRTC (FREE/Open-Source solution).
+   - In-chat call notifications and history.
+
+4. **Learning Environment:**
+   - **Groups:** Teachers can create and manage student groups.
+   - **Live Sessions:** Scheduled 1-on-1 sessions for real-time instruction and "Tasmie" (recitation assessment).
+   - **Resources:** Shared files and activity logs for tracking learning history.
+
+5. **Security & Performance:**
+   - Session-based authentication with secure cookie handling.
+   - Input sanitization and PDO-prepared statements for SQL injection prevention.
+   - Modular structure for easy feature expansion (e.g., CallService, MediaProcessor).
+
+## UI/UX Design
+- Premium Arabic-centric design with "Amiri", "Cairo", and "Tajawal" fonts.
+- Responsive dashboard for mobile and desktop users.
+- RTL (Right-to-Left) layout for native Arabic user experience.
+- Interactive elements like glassmorphism effects, tilt-effects, and custom video players.
+
+## Local Network Optimized
+The platform is built to be lightweight and capable of running in local network or low-infrastructure environments without heavy cloud dependencies, making it ideal for institutional or local community use.
