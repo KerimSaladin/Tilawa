@@ -21,10 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_activity($pdo, $user['id'], 'teacher_rejected', 'تم رفض معلم #' . $teacher_id, 'user', $teacher_id);
             $_SESSION['flash_success'] = 'تم رفض طلب المعلم.';
         } elseif ($action === 'toggle_star') {
-            $pdo->prepare("UPDATE users SET has_star = 1 - has_star WHERE id=?")->execute([$teacher_id]);
+            $pdo->prepare("UPDATE users SET has_star = NOT has_star WHERE id=?")->execute([$teacher_id]);
             $_SESSION['flash_success'] = 'تم تحديث نجمة المعلم.';
         } elseif ($action === 'toggle_exam') {
-            $pdo->prepare("UPDATE users SET exam_passed = 1 - exam_passed WHERE id=? AND user_type='teacher'")->execute([$teacher_id]);
+            $pdo->prepare("UPDATE users SET exam_passed = NOT exam_passed WHERE id=? AND user_type='teacher'")->execute([$teacher_id]);
             $_SESSION['flash_success'] = 'تم تحديث حالة الامتحان.';
         }
     }

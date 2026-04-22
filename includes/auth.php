@@ -6,7 +6,7 @@ require_once __DIR__ . '/functions.php';
  * Login user
  */
 function login_user($pdo, $email, $password) {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_active = 1");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_active = TRUE");
     $stmt->execute([$email]);
     $user = $stmt->fetch();
     
@@ -107,7 +107,7 @@ function register_user($pdo, $data) {
         $data['full_name'],
         $user_type,
         $teacher_status,
-        $exam_required ? 1 : 0,
+        $exam_required ? true : false,
         $data['gender'],
         $data['phone'] ?? null,
         null,
@@ -118,13 +118,13 @@ function register_user($pdo, $data) {
         $place[] = '?';
         $params[] = $payment_token;
     }
-    $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ")";
+    $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ") RETURNING id";
     $stmt = $pdo->prepare($sql);
     
     try {
         $stmt->execute($params);
         
-        $user_id = $pdo->lastInsertId();
+        $user_id = $stmt->fetchColumn();
         
         // Upload certificate if teacher and certificate provided
         if ($user_type === 'teacher' && $has_certificate) {

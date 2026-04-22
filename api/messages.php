@@ -18,9 +18,9 @@ if ($action === 'send') {
     $receiver_id  = (int)($_POST['receiver_id'] ?? 0);
     $message_text = trim($_POST['message_text'] ?? '');
     if (!$receiver_id || !$message_text) { echo json_encode(['success'=>false,'message'=>'بيانات ناقصة']); exit; }
-    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?,?,?)");
+    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?,?,?) RETURNING id");
     $stmt->execute([$user['id'], $receiver_id, $message_text]);
-    $id = $pdo->lastInsertId();
+    $id = $stmt->fetchColumn();
     echo json_encode(['success'=>true,'id'=>$id,'time'=>date('H:i')]);
 
 } elseif ($action === 'poll') {

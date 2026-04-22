@@ -38,7 +38,7 @@ $active_subs = $pdo->query("
     FROM user_subscriptions us
     JOIN users u ON us.user_id=u.id
     JOIN subscriptions s ON us.subscription_id=s.id
-    WHERE us.status='active' AND us.end_date >= CURDATE()
+    WHERE us.status='active' AND us.end_date >= CURRENT_DATE
     ORDER BY us.created_at DESC
 ")->fetchAll();
 

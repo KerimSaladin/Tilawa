@@ -23,7 +23,7 @@ if ($session_id) {
         $gs = $stmt->fetch();
         if ($gs) $session_title = $gs['title'];
     } else {
-        $stmt = $pdo->prepare("SELECT u.full_name FROM live_sessions ls JOIN users u ON u.id=IF(ls.teacher_id=?,ls.student_id,ls.teacher_id) WHERE ls.id=?");
+        $stmt = $pdo->prepare("SELECT u.full_name FROM live_sessions ls JOIN users u ON u.id=CASE WHEN ls.teacher_id=? THEN ls.student_id ELSE ls.teacher_id END WHERE ls.id=?");
         $stmt->execute([$user['id'], $session_id]);
         $ls = $stmt->fetch();
         if ($ls) $session_title = 'جلسة مع ' . $ls['full_name'];

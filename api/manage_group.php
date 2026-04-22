@@ -50,7 +50,7 @@ try {
         }
         
         // Verify student exists, is active, and has same gender as teacher
-        $stmt = $pdo->prepare("SELECT id, gender FROM users WHERE id = ? AND user_type = 'student' AND is_active = 1");
+        $stmt = $pdo->prepare("SELECT id, gender FROM users WHERE id = ? AND user_type = 'student' AND is_active = TRUE");
         $stmt->execute([$student_id]);
         $student = $stmt->fetch();
         

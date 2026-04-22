@@ -29,7 +29,7 @@ if ($teacher_id <= 0 || $rating < 1 || $rating > 5) {
 }
 
 // تحقق من وجود المعلم
-$stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND is_active=1");
+$stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND is_active=TRUE");
 $stmt->execute([$teacher_id]);
 if (!$stmt->fetch()) {
     echo json_encode(['success'=>false,'message'=>'المعلم غير موجود']); exit;
@@ -40,7 +40,7 @@ try {
     $stmt = $pdo->prepare("
         INSERT INTO ratings (student_id, teacher_id, rating, comment)
         VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE rating=VALUES(rating), comment=VALUES(comment)
+        ON CONFLICT (student_id, teacher_id) DO UPDATE SET rating=EXCLUDED.rating, comment=EXCLUDED.comment
     ");
     $stmt->execute([$user['id'], $teacher_id, $rating, $comment ?: null]);
     echo json_encode(['success'=>true,'message'=>'تم إرسال تقييمك بنجاح!']);

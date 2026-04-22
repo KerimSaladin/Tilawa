@@ -13,10 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uid     = (int)($_POST['user_id'] ?? 0);
     if ($uid && $uid !== $user['id']) {
         if ($action === 'toggle_active') {
-            $pdo->prepare("UPDATE users SET is_active = 1 - is_active WHERE id=?")->execute([$uid]);
+            $pdo->prepare("UPDATE users SET is_active = NOT is_active WHERE id=?")->execute([$uid]);
             $_SESSION['flash_success'] = 'تم تحديث حالة المستخدم.';
         } elseif ($action === 'toggle_star') {
-            $pdo->prepare("UPDATE users SET has_star = 1 - has_star WHERE id=?")->execute([$uid]);
+            $pdo->prepare("UPDATE users SET has_star = NOT has_star WHERE id=?")->execute([$uid]);
             $_SESSION['flash_success'] = 'تم تحديث نجمة المستخدم.';
         } elseif ($action === 'add_wallet') {
             $amount = (float)($_POST['amount'] ?? 0);

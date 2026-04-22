@@ -62,7 +62,7 @@ try {
         $r = $rec->fetch();
         if ($r) {
             $pdo->prepare("INSERT INTO progress (student_id,surah_name,memorized_verses,total_verses) VALUES (?,?,1,1)
-                ON DUPLICATE KEY UPDATE memorized_verses=memorized_verses+1, last_updated=CURRENT_TIMESTAMP")
+                ON CONFLICT (student_id, surah_name) DO UPDATE SET memorized_verses=progress.memorized_verses+1, last_updated=CURRENT_TIMESTAMP")
                 ->execute([$r['student_id'], $r['surah_name']]);
         }
     }

@@ -1,6 +1,6 @@
 <?php
-require_once 'config.php';
-require_once 'functions.php';
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
 
 /**
  * Format amount with thousands separator for Algerian Dinar
@@ -183,7 +183,7 @@ function has_active_platform_subscription($pdo, $user_id) {
 
     $stmt = $pdo->prepare("
         SELECT us.id FROM user_subscriptions us
-        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURDATE()
+        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURRENT_DATE
         LIMIT 1
     ");
     $stmt->execute([$user_id]);
@@ -197,7 +197,7 @@ function get_user_subscription($pdo, $user_id) {
     $stmt = $pdo->prepare("
         SELECT us.*, s.name_ar, s.name FROM user_subscriptions us
         JOIN subscriptions s ON us.subscription_id=s.id
-        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURDATE()
+        WHERE us.user_id=? AND us.status='active' AND us.end_date >= CURRENT_DATE
         ORDER BY us.end_date DESC LIMIT 1
     ");
     $stmt->execute([$user_id]);

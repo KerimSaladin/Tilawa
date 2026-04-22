@@ -41,17 +41,15 @@ try {
     $stmt = $pdo->prepare("
         INSERT INTO progress (student_id, surah_name, memorized_verses, total_verses)
         VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE 
-            memorized_verses = ?,
-            total_verses = ?,
+        ON CONFLICT (student_id, surah_name) DO UPDATE SET
+            memorized_verses = EXCLUDED.memorized_verses,
+            total_verses = EXCLUDED.total_verses,
             last_updated = CURRENT_TIMESTAMP
     ");
     
     $stmt->execute([
         $student_id,
         $surah_name,
-        $memorized_verses,
-        $total_verses,
         $memorized_verses,
         $total_verses
     ]);
