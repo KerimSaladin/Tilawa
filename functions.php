@@ -119,7 +119,7 @@ function is_trial_active($pdo, $user_id) {
 function has_active_access($pdo, $user_id) {
     // الاشتراك اختياري — يمنح خصم 15% فقط
     // جميع المستخدمين المسجلين لديهم وصول كامل
-    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = TRUE");
+    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = 1");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch();
     return (bool)$user; // أي مستخدم نشط لديه وصول
@@ -493,9 +493,10 @@ function get_teacher_files($pdo, $teacher_id = null) {
 }
 
 function column_exists($pdo, $table, $column) {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = ?");
+    $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = ?");
     $stmt->execute([$table, $column]);
-    return (int)$stmt->fetchColumn() > 0;
+    $row = $stmt->fetch();
+    return isset($row['c']) && (int)$row['c'] > 0;
 }
 
 /**
@@ -533,7 +534,7 @@ function is_teacher_online($pdo, $teacher_id) {
         return $last_seen >= $two_minutes_ago;
     }
     
-    return $teacher['is_online'] == true;
+    return $teacher['is_online'] == 1;
 }
 
 /**
@@ -542,7 +543,7 @@ function is_teacher_online($pdo, $teacher_id) {
 function mark_teacher_offline($pdo, $teacher_id) {
     $stmt = $pdo->prepare("
         UPDATE users 
-        SET is_online = FALSE 
+        SET is_online = 0 
         WHERE id = ? AND user_type = 'teacher'
     ");
     return $stmt->execute([$teacher_id]);
@@ -554,9 +555,9 @@ function mark_teacher_offline($pdo, $teacher_id) {
 function cleanup_offline_teachers($pdo) {
     $stmt = $pdo->prepare("
         UPDATE users 
-        SET is_online = FALSE 
+        SET is_online = 0 
         WHERE user_type = 'teacher' 
-        AND is_online = TRUE 
+        AND is_online = 1 
         AND last_seen < NOW() - INTERVAL '2 minutes'
     ");
     return $stmt->execute();
