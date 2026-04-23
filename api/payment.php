@@ -35,18 +35,23 @@ switch ($action) {
         if ($user['user_type'] !== 'student') send_json(['success'=>false,'message'=>'الطلاب فقط']);
         $teacher_id   = (int)($_POST['teacher_id'] ?? 0);
         $payment_type = $_POST['payment_type'] ?? '';
+        $session_count = max(1, min(20, (int)($_POST['session_count'] ?? 1)));
         if (!in_array($payment_type, ['session','course'])) send_json(['success'=>false,'message'=>'نوع دفع غير صالح']);
         $pricing = get_teacher_pricing($pdo, $teacher_id);
         if (!$pricing) send_json(['success'=>false,'message'=>'المعلم غير موجود']);
         $price_field = $payment_type === 'session' ? 'session_price' : 'price_per_course';
         $base_price  = $pricing[$price_field] ?? 0;
         if (!$base_price || $base_price <= 0) send_json(['success'=>false,'message'=>'لم يحدد المعلم أسعاره بعد']);
-        $description = ($payment_type === 'session' ? 'دفع جلسة' : 'دفع دورة') . ' مع المعلم #' . $teacher_id;
-        $result = process_payment($pdo, $user['id'], $teacher_id, $payment_type . '_payment', $base_price, $description, true);
+        // Multiply by session count for session payments
+        $total_price = ($payment_type === 'session') ? $base_price * $session_count : $base_price;
+        $description = ($payment_type === 'session'
+            ? "دفع {$session_count} جلسة"
+            : 'دفع دورة') . ' مع المعلم #' . $teacher_id;
+        $result = process_payment($pdo, $user['id'], $teacher_id, $payment_type . '_payment', $total_price, $description, true);
         if ($result['success']) {
             $pdo->prepare("INSERT INTO enrollments (student_id,teacher_id,type,sessions_paid,amount_paid,discount_applied) VALUES (?,?,?,?,?,?)")
-                ->execute([$user['id'], $teacher_id, $payment_type, $payment_type==='session'?1:0,
-                           $result['final_amount'] ?? $base_price,
+                ->execute([$user['id'], $teacher_id, $payment_type, $payment_type==='session'?$session_count:0,
+                           $result['final_amount'] ?? $total_price,
                            isset($result['discount_applied']) && $result['discount_applied'] > 0 ? 1 : 0]);
         }
         send_json($result);

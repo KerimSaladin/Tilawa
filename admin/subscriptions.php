@@ -13,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create') {
         $name_ar      = trim($_POST['name_ar'] ?? '');
         $price        = (float)($_POST['price'] ?? 0);
-        $duration     = (int)($_POST['duration_days'] ?? 30);
+        $is_lifetime  = !empty($_POST['is_lifetime']);
+        $duration     = $is_lifetime ? 0 : (int)($_POST['duration_days'] ?? 30);
         $features     = trim($_POST['features'] ?? '');
         if ($name_ar && $price > 0) {
             $pdo->prepare("INSERT INTO subscriptions (name_ar,name,price,duration_days,features) VALUES (?,?,?,?,?)")
@@ -34,11 +35,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $packages = $pdo->query("SELECT * FROM subscriptions ORDER BY price ASC")->fetchAll();
 $active_subs = $pdo->query("
-    SELECT us.*, u.full_name, u.email, s.name_ar
+    SELECT us.*, u.full_name, u.email, s.name_ar, s.duration_days
     FROM user_subscriptions us
     JOIN users u ON us.user_id=u.id
     JOIN subscriptions s ON us.subscription_id=s.id
-    WHERE us.status='active' AND us.end_date >= CURRENT_DATE
+    WHERE us.status='active' AND (s.duration_days = 0 OR us.end_date >= CURRENT_DATE)
     ORDER BY us.created_at DESC
 ")->fetchAll();
 
@@ -82,9 +83,9 @@ $active_page = 'subscriptions';
     <div class="pkg-grid">
         <?php foreach ($packages as $p): ?>
         <div class="pkg-card">
-            <div class="pkg-name"><?php echo htmlspecialchars($p['name_ar']); ?></div>
+            <div class="pkg-name"><?php echo htmlspecialchars($p['name_ar']); ?><?php if ($p['duration_days'] == 0) echo ' <span style="background:#fef3c7;color:#92400e;font-size:.72rem;padding:.2rem .5rem;border-radius:50px;margin-right:.4rem">مدى الحياة ♾️</span>'; ?></div>
             <div class="pkg-price"><?php echo number_format($p['price'],0,'.',','); ?> دج</div>
-            <div class="pkg-period"><?php echo $p['duration_days']; ?> يوم</div>
+            <div class="pkg-period"><?php echo $p['duration_days'] == 0 ? 'مدى الحياة' : $p['duration_days'] . ' يوم'; ?></div>
             <?php if ($p['features']): ?><div style="font-size:.8rem;color:var(--slate);margin-top:.5rem"><?php echo htmlspecialchars($p['features']); ?></div><?php endif; ?>
             <form method="POST" style="margin-top:.75rem" onsubmit="return confirm('هل تريد حذف هذه الباقة؟')">
                 <input type="hidden" name="action" value="delete">
@@ -95,8 +96,7 @@ $active_page = 'subscriptions';
         <?php endforeach; ?>
     </div>
 
-    <!-- إضافة باقة جديدة -->
-    <div style="background:var(--warm-cream);border-radius:var(--radius-lg);padding:1.25rem;margin-top:1rem">
+        <div style="background:var(--warm-cream);border-radius:var(--radius-lg);padding:1.25rem;margin-top:1rem">
         <h4 style="margin-bottom:1rem;font-weight:700">+ إضافة باقة جديدة</h4>
         <form method="POST">
             <input type="hidden" name="action" value="create">
@@ -111,8 +111,12 @@ $active_page = 'subscriptions';
                 </div>
                 <div class="form-group" style="margin:0">
                     <label class="form-label">المدة (يوم)</label>
-                    <input type="number" name="duration_days" class="form-input" value="30" min="1" required>
+                    <input type="number" name="duration_days" id="duration_days_input" class="form-input" value="30" min="1">
                 </div>
+            </div>
+            <div class="form-group" style="margin:0 0 1rem;display:flex;align-items:center;gap:.75rem">
+                <input type="checkbox" id="is_lifetime" name="is_lifetime" value="1" onchange="document.getElementById('duration_days_input').disabled=this.checked" style="width:18px;height:18px;accent-color:#40916C">
+                <label for="is_lifetime" style="margin:0;font-weight:600;cursor:pointer">♾️ اشتراك مدى الحياة (بدون انتهاء)</label>
             </div>
             <div class="form-group" style="margin:0 0 1rem">
                 <label class="form-label">المميزات (مفصولة بفاصلة)</label>
@@ -120,7 +124,7 @@ $active_page = 'subscriptions';
             </div>
             <button type="submit" class="btn btn-primary">إضافة الباقة</button>
         </form>
-    </div>
+        </div>
 </div>
 
 <!-- الاشتراكات النشطة -->
@@ -139,7 +143,7 @@ $active_page = 'subscriptions';
                 </td>
                 <td><?php echo htmlspecialchars($s['name_ar']); ?></td>
                 <td><?php echo date('d/m/Y', strtotime($s['start_date'])); ?></td>
-                <td><?php echo date('d/m/Y', strtotime($s['end_date'])); ?></td>
+                <td><?php echo ($s['duration_days'] == 0) ? '<span style="color:#065f46;font-weight:700">♾️ مدى الحياة</span>' : date('d/m/Y', strtotime($s['end_date'])); ?></td>
                 <td>
                     <form method="POST" onsubmit="return confirm('هل تريد إلغاء هذا الاشتراك؟')">
                         <input type="hidden" name="action" value="revoke">

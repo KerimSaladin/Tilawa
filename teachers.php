@@ -20,7 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['join_group'])) {
     header('Location: teachers.php'); exit;
 }
 
-// جلب المعلمين مع تفاصيلهم
+// جلب المعلمين مع تفاصيلهم — مطابقة الجنس فقط
+$student_gender = $user['gender'] ?? 'male';
 $teachers = $pdo->prepare("
     SELECT u.*,
            COALESCE(AVG(r.rating), 0) as avg_rating,
@@ -30,10 +31,11 @@ $teachers = $pdo->prepare("
     FROM users u
     LEFT JOIN ratings r ON u.id = r.teacher_id
     WHERE u.user_type='teacher' AND u.teacher_status='approved' AND u.is_active = TRUE
+      AND u.gender = ?
     GROUP BY u.id
     ORDER BY avg_rating DESC, total_sessions DESC
 ");
-$teachers->execute();
+$teachers->execute([$student_gender]);
 $teachers = $teachers->fetchAll();
 
 // المعلمون الذين سجّل معهم الطالب
@@ -257,6 +259,16 @@ $active_page = 'teachers';
             <h3 id="pay_title" style="margin:0">تأكيد الدفع</h3>
             <button onclick="document.getElementById('payModal').classList.remove('show')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--slate)">✕</button>
         </div>
+        <!-- عدد الجلسات (يظهر فقط للجلسات) -->
+        <div id="session_count_row" style="display:none;margin-bottom:1rem">
+            <label style="font-size:.9rem;font-weight:600;color:var(--charcoal);display:block;margin-bottom:.4rem">عدد الجلسات</label>
+            <div style="display:flex;align-items:center;gap:.75rem">
+                <button type="button" onclick="changeCount(-1)" style="width:36px;height:36px;border-radius:50%;border:2px solid var(--sand);background:#fff;font-size:1.2rem;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
+                <span id="session_count_val" style="font-size:1.3rem;font-weight:800;min-width:30px;text-align:center">1</span>
+                <button type="button" onclick="changeCount(1)" style="width:36px;height:36px;border-radius:50%;border:2px solid var(--sand);background:#fff;font-size:1.2rem;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
+                <span style="font-size:.82rem;color:var(--slate)">(الحد الأقصى: 20)</span>
+            </div>
+        </div>
         <div style="background:var(--warm-cream);border-radius:var(--radius-md);padding:1.25rem;margin-bottom:1rem">
             <div class="pay-row"><span style="color:var(--slate)">المعلم</span><span id="pay_teacher" style="font-weight:700"></span></div>
             <div class="pay-row"><span style="color:var(--slate)">النوع</span><span id="pay_type" style="font-weight:700"></span></div>
@@ -330,11 +342,30 @@ function filterByType(type, btn) {
 }
 
 // ── مودال الدفع ──
+let _sessionCount = 1;
+
+function changeCount(delta) {
+    _sessionCount = Math.max(1, Math.min(20, _sessionCount + delta));
+    document.getElementById('session_count_val').textContent = _sessionCount;
+    const total = Math.round(_pay.finalPerUnit * _sessionCount);
+    document.getElementById('pay_final').textContent = total.toLocaleString('ar') + ' دج';
+    document.getElementById('pay_type').textContent = 'جلسة × ' + _sessionCount;
+}
+
 async function openPay(tid, type, orig, final, name) {
-    _pay = {tid, type, orig, final, name};
-    document.getElementById('pay_title').textContent = type === 'session' ? 'حجز جلسة' : 'التسجيل في الدورة';
+    _pay = {tid, type, orig, final, finalPerUnit: final, name};
+    _sessionCount = 1;
+    document.getElementById('pay_title').textContent = type === 'session' ? 'حجز جلسات' : 'التسجيل في الدورة';
     document.getElementById('pay_teacher').textContent = name;
-    document.getElementById('pay_type').textContent = type === 'session' ? 'جلسة واحدة' : 'دورة كاملة';
+    const countRow = document.getElementById('session_count_row');
+    if (type === 'session') {
+        countRow.style.display = 'block';
+        document.getElementById('session_count_val').textContent = '1';
+        document.getElementById('pay_type').textContent = 'جلسة × 1';
+    } else {
+        countRow.style.display = 'none';
+        document.getElementById('pay_type').textContent = 'دورة كاملة';
+    }
     document.getElementById('pay_final').textContent = final.toLocaleString('ar') + ' دج';
     const origRow = document.getElementById('pay_orig_row');
     if (orig !== final) {
@@ -350,7 +381,8 @@ async function openPay(tid, type, orig, final, name) {
         const d = await r.json();
         const bal = d.balance || 0;
         document.getElementById('pay_balance').textContent = bal.toLocaleString('ar') + ' دج';
-        const ok = bal >= final;
+        const total = Math.round(_pay.finalPerUnit * _sessionCount);
+        const ok = bal >= total;
         document.getElementById('pay_msg').innerHTML = ok
             ? '<span style="color:var(--secondary-green)">✅ رصيدك كافٍ للدفع</span>'
             : '<span style="color:#dc2626">❌ رصيدك غير كافٍ — <a href="wallet.php">شحن المحفظة</a></span>';
@@ -362,9 +394,10 @@ async function confirmPay() {
     const btn = document.getElementById('pay_btn');
     btn.disabled = true; btn.textContent = '...جارٍ الدفع';
     try {
+        const count = _pay.type === 'session' ? _sessionCount : 1;
         const r = await fetch(SITE_URL + '/api/payment.php', {
             method:'POST', credentials:'include',
-            body: new URLSearchParams({action:'pay_teacher', teacher_id:_pay.tid, payment_type:_pay.type})
+            body: new URLSearchParams({action:'pay_teacher', teacher_id:_pay.tid, payment_type:_pay.type, session_count: count})
         });
         const d = await r.json();
         if (d.success) {

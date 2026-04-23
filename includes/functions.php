@@ -84,11 +84,12 @@ function generate_token($length = 32) {
  */
 function get_subscription_status($pdo, $user_id) {
     $stmt = $pdo->prepare("
-        SELECT us.*, s.name_ar, s.name 
+        SELECT us.*, s.name_ar, s.name, s.duration_days
         FROM user_subscriptions us
         JOIN subscriptions s ON us.subscription_id = s.id
-        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURRENT_DATE
-        ORDER BY us.end_date DESC
+        WHERE us.user_id = ? AND us.status = 'active'
+          AND (s.duration_days = 0 OR us.end_date >= CURRENT_DATE)
+        ORDER BY s.duration_days ASC, us.end_date DESC
         LIMIT 1
     ");
     $stmt->execute([$user_id]);

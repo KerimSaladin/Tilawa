@@ -14,11 +14,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['top_up'])) {
     if (!in_array($amount, TOP_UP_AMOUNTS)) {
         $_SESSION['flash_error'] = 'المبلغ غير صحيح';
     } else {
-        // شحن مباشر — لا نطرح ثم نضيف بل نضيف مباشرة
         $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?")->execute([$amount, $user['id']]);
         $pdo->prepare("INSERT INTO transactions (from_user_id, type, amount, description, status) VALUES (?,?,?,?,'completed')")
             ->execute([$user['id'], 'top_up', $amount, 'شحن المحفظة: ' . number_format($amount, 0, '.', ',') . ' دج']);
         $_SESSION['flash_success'] = 'تم شحن المحفظة بنجاح!';
+    }
+    redirect('wallet.php');
+}
+
+// طلب سحب الأرباح للمعلم
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout']) && $user['user_type'] === 'teacher') {
+    $payout_amount = (float)($_POST['payout_amount'] ?? 0);
+    $bank_holder   = trim($_POST['bank_holder'] ?? '');
+    $bank_rib      = trim($_POST['bank_rib'] ?? '');
+    $bank_name     = trim($_POST['bank_name'] ?? '');
+    $current_bal   = get_wallet_balance($pdo, $user['id']);
+    if ($payout_amount < 500) {
+        $_SESSION['flash_error'] = 'الحد الأدنى للسحب 500 دج';
+    } elseif ($payout_amount > $current_bal) {
+        $_SESSION['flash_error'] = 'المبلغ أكبر من رصيدك المتاح';
+    } elseif (!$bank_holder || !$bank_rib || !$bank_name) {
+        $_SESSION['flash_error'] = 'يرجى ملء جميع بيانات الحساب البنكي';
+    } else {
+        $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?")->execute([$payout_amount, $user['id']]);
+        $desc = "طلب سحب أرباح — {$bank_name} | {$bank_holder} | RIB: {$bank_rib}";
+        $pdo->prepare("INSERT INTO transactions (from_user_id, type, amount, description, status) VALUES (?,?,?,?,'pending')")
+            ->execute([$user['id'], 'teacher_earning', $payout_amount, $desc]);
+        $_SESSION['flash_success'] = 'تم تقديم طلب السحب! ستتم المعالجة خلال 2-5 أيام عمل.';
     }
     redirect('wallet.php');
 }
@@ -89,18 +111,138 @@ $active_page = 'wallet';
 <!-- شحن المحفظة -->
 <div class="section-card">
     <h3>💳 شحن المحفظة</h3>
-    <p style="color:var(--slate);font-size:.9rem;margin-bottom:1rem">اختر المبلغ الذي تريد إضافته (نظام دفع تجريبي)</p>
-    <form method="POST">
-        <input type="hidden" name="top_up" value="1">
-        <div class="topup-grid">
-            <?php foreach (TOP_UP_AMOUNTS as $amount): ?>
-            <button type="submit" name="amount" value="<?php echo $amount; ?>" class="topup-btn">
-                <span class="amount">+<?php echo number_format($amount, 0, '.', ','); ?></span>
-                <span class="label">دج</span>
-            </button>
-            <?php endforeach; ?>
+    <p style="color:var(--slate);font-size:.9rem;margin-bottom:1.25rem">اختر المبلغ ثم أدخل بيانات البطاقة لإتمام الشحن</p>
+    <div class="topup-grid">
+        <?php foreach (TOP_UP_AMOUNTS as $amount): ?>
+        <button type="button" class="topup-btn" onclick="openCardModal(<?php echo $amount; ?>)">
+            <span class="amount">+<?php echo number_format($amount, 0, '.', ','); ?></span>
+            <span class="label">دج</span>
+        </button>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- مودال إدخال البطاقة -->
+<div id="cardModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:20px;padding:2rem;max-width:420px;width:90%;box-shadow:0 25px 80px rgba(0,0,0,.2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+            <h3 style="margin:0;font-size:1.1rem">💳 إدخال بيانات البطاقة</h3>
+            <button onclick="closeCardModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#94a3b8">✕</button>
         </div>
-    </form>
+        <div id="card_amount_display" style="background:linear-gradient(135deg,var(--deep-blue),var(--royal-blue));border-radius:12px;padding:1rem;color:#fff;text-align:center;margin-bottom:1.25rem">
+            <div style="font-size:.85rem;opacity:.8">المبلغ المراد شحنه</div>
+            <div id="card_amount_val" style="font-size:2rem;font-weight:900">0 دج</div>
+        </div>
+        <form method="POST" id="cardTopupForm" onsubmit="return validateCard()">
+            <input type="hidden" name="top_up" value="1">
+            <input type="hidden" name="amount" id="card_hidden_amount" value="">
+            <div class="form-group" style="margin-bottom:1rem">
+                <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">رقم البطاقة</label>
+                <input type="text" id="card_number" class="form-input" placeholder="0000 0000 0000 0000"
+                       maxlength="19" oninput="formatCardNum(this)" required style="letter-spacing:.05em">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+                <div class="form-group" style="margin:0">
+                    <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">تاريخ الانتهاء</label>
+                    <input type="text" id="card_expiry" class="form-input" placeholder="MM/YY"
+                           maxlength="5" oninput="formatExpiry(this)" required>
+                </div>
+                <div class="form-group" style="margin:0">
+                    <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">رمز الأمان</label>
+                    <input type="text" id="card_cvc" class="form-input" placeholder="123"
+                           maxlength="4" inputmode="numeric" pattern="[0-9]{3,4}" required>
+                </div>
+            </div>
+            <p style="font-size:.78rem;color:#94a3b8;text-align:center;margin-bottom:1rem">🔒 بياناتك محمية ومشفرة — لن يتم حفظ بيانات البطاقة</p>
+            <button type="submit" class="btn btn-primary" style="width:100%">تأكيد الشحن</button>
+        </form>
+    </div>
+</div>
+<script>
+function openCardModal(amount) {
+    document.getElementById('card_amount_val').textContent = amount.toLocaleString('ar') + ' دج';
+    document.getElementById('card_hidden_amount').value = amount;
+    const m = document.getElementById('cardModal');
+    m.style.display = 'flex';
+}
+function closeCardModal() { document.getElementById('cardModal').style.display = 'none'; }
+function formatCardNum(el) {
+    let v = el.value.replace(/\D/g,'').substring(0,16);
+    el.value = v.replace(/(.{4})/g,'$1 ').trim();
+}
+function formatExpiry(el) {
+    let v = el.value.replace(/\D/g,'').substring(0,4);
+    if (v.length > 2) v = v.substring(0,2) + '/' + v.substring(2);
+    el.value = v;
+}
+function validateCard() {
+    const num = document.getElementById('card_number').value.replace(/\s/g,'');
+    const exp = document.getElementById('card_expiry').value;
+    const cvc = document.getElementById('card_cvc').value;
+    if (num.length < 13) { alert('رقم البطاقة غير صحيح'); return false; }
+    if (!/^\d{2}\/\d{2}$/.test(exp)) { alert('تاريخ الانتهاء غير صحيح'); return false; }
+    if (cvc.length < 3) { alert('رمز الأمان غير صحيح'); return false; }
+    return true;
+}
+document.getElementById('cardModal').addEventListener('click', e => { if(e.target===document.getElementById('cardModal')) closeCardModal(); });
+</script>
+<?php endif; ?>
+
+<?php if ($user['user_type'] === 'teacher'): ?>
+<!-- قسم سحب الأرباح للمعلم -->
+<div class="section-card">
+    <h3>💰 استلام الأرباح</h3>
+    <p style="color:var(--slate);font-size:.9rem;margin-bottom:1.25rem">أدخل بيانات حسابك البنكي لاستلام أرباحك</p>
+    <?php
+    $pending_payout = $wallet_balance; // teacher's full balance is their earnings
+    ?>
+    <div style="background:linear-gradient(135deg,rgba(64,145,108,.08),rgba(149,213,178,.12));border:1px solid rgba(64,145,108,.25);border-radius:12px;padding:1.25rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+        <div>
+            <div style="font-size:.88rem;color:var(--slate)">رصيد متاح للسحب</div>
+            <div style="font-size:2rem;font-weight:900;color:var(--secondary-green)"><?php echo number_format($wallet_balance,0,'.',','); ?> دج</div>
+        </div>
+        <?php if ($wallet_balance >= 500): ?>
+        <button onclick="document.getElementById('payoutModal').style.display='flex'" class="btn btn-primary">طلب سحب الأرباح</button>
+        <?php else: ?>
+        <span style="font-size:.85rem;color:#94a3b8">الحد الأدنى للسحب: 500 دج</span>
+        <?php endif; ?>
+    </div>
+    <div style="font-size:.85rem;color:var(--slate)">
+        <p>📌 تتم معالجة طلبات السحب خلال 2-5 أيام عمل.</p>
+        <p>📌 يُحتجز 15% عمولة المنصة من كل جلسة.</p>
+    </div>
+</div>
+
+<!-- مودال طلب السحب -->
+<div id="payoutModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:20px;padding:2rem;max-width:440px;width:90%;box-shadow:0 25px 80px rgba(0,0,0,.2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+            <h3 style="margin:0;font-size:1.1rem">🏦 بيانات السحب</h3>
+            <button onclick="document.getElementById('payoutModal').style.display='none'" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#94a3b8">✕</button>
+        </div>
+        <form method="POST" action="wallet.php">
+            <input type="hidden" name="request_payout" value="1">
+            <div class="form-group" style="margin-bottom:1rem">
+                <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">اسم صاحب الحساب</label>
+                <input type="text" name="bank_holder" class="form-input" placeholder="الاسم الكامل" required>
+            </div>
+            <div class="form-group" style="margin-bottom:1rem">
+                <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">رقم الحساب البنكي (RIB)</label>
+                <input type="text" name="bank_rib" class="form-input" placeholder="00000 00000 00000000000 00" required>
+            </div>
+            <div class="form-group" style="margin-bottom:1rem">
+                <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">اسم البنك</label>
+                <input type="text" name="bank_name" class="form-input" placeholder="مثال: BNA, BADR, CPA..." required>
+            </div>
+            <div class="form-group" style="margin-bottom:1.25rem">
+                <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">المبلغ المراد سحبه (دج)</label>
+                <input type="number" name="payout_amount" class="form-input" min="500" max="<?php echo $wallet_balance; ?>"
+                       value="<?php echo $wallet_balance; ?>" required>
+                <small style="color:#94a3b8">الحد الأدنى: 500 دج / الحد الأقصى: <?php echo number_format($wallet_balance,0,'.',','); ?> دج</small>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%">تقديم طلب السحب</button>
+        </form>
+    </div>
 </div>
 <?php endif; ?>
 

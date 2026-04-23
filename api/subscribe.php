@@ -41,9 +41,11 @@ try {
     $pdo->beginTransaction();
     // خصم من المحفظة
     $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?")->execute([$pkg['price'], $user['id']]);
-    // إنشاء الاشتراك
+    // إنشاء الاشتراك — duration_days=0 يعني مدى الحياة
     $start = date('Y-m-d');
-    $end   = date('Y-m-d', strtotime("+{$pkg['duration_days']} days"));
+    $end   = ($pkg['duration_days'] == 0)
+        ? '2099-12-31'  // تاريخ بعيد جداً يمثل مدى الحياة
+        : date('Y-m-d', strtotime("+{$pkg['duration_days']} days"));
     $pdo->prepare("INSERT INTO user_subscriptions (user_id,subscription_id,start_date,end_date,status) VALUES (?,?,?,?,'active')")
         ->execute([$user['id'], $pkg['id'], $start, $end]);
     // تسجيل المعاملة

@@ -34,11 +34,24 @@ $view = $_GET['view'] ?? 'upload';
 $active_page = 'recitation';
 $recitation_id = $_GET['id'] ?? null;
 
-// Get teachers list for students (all approved teachers)
+// Get teachers list for students — only teachers the student has paid for
 $teachers = [];
 if ($user['user_type'] === 'student') {
-    $stmt = $pdo->prepare("SELECT id, full_name FROM users WHERE user_type = 'teacher' AND is_active = TRUE AND teacher_status = 'approved'");
-    $stmt->execute();
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT u.id, u.full_name
+        FROM users u
+        WHERE u.user_type = 'teacher' AND u.is_active = TRUE AND u.teacher_status = 'approved'
+          AND u.id IN (
+              SELECT DISTINCT teacher_id FROM recitations WHERE student_id = ? AND teacher_id IS NOT NULL
+              UNION
+              SELECT DISTINCT teacher_id FROM enrollments WHERE student_id = ?
+              UNION
+              SELECT DISTINCT to_user_id FROM transactions
+              WHERE from_user_id = ? AND type IN ('session_payment','course_payment') AND status = 'completed' AND to_user_id IS NOT NULL
+          )
+        ORDER BY u.full_name
+    ");
+    $stmt->execute([$user['id'], $user['id'], $user['id']]);
     $teachers = $stmt->fetchAll();
 }
 
@@ -477,13 +490,18 @@ $surah_list = get_surah_list();
                     
                     <?php if (count($teachers) > 0): ?>
                     <div class="form-group">
-                        <label class="form-label" for="teacher_id">اختر المعلم (اختياري)</label>
+                        <label class="form-label" for="teacher_id">اختر المعلم</label>
                         <select id="teacher_id" name="teacher_id" class="form-select">
                             <option value="">اختر معلم</option>
                             <?php foreach ($teachers as $teacher): ?>
                                 <option value="<?php echo $teacher['id']; ?>"><?php echo htmlspecialchars($teacher['full_name']); ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <small style="color:var(--slate);font-size:.82rem">يظهر هنا فقط المعلمون الذين دفعت لهم مسبقاً</small>
+                    </div>
+                    <?php else: ?>
+                    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:var(--radius-md);padding:.85rem 1.25rem;margin-bottom:1rem;font-size:.9rem;color:#92400e">
+                        📌 لا يوجد معلمون مدفوعون بعد. <a href="teachers.php" style="color:#92400e;font-weight:700">ابحث عن معلم وادفع الجلسة أولاً</a> ثم ارفع تلاوتك.
                     </div>
                     <?php endif; ?>
                     
@@ -492,6 +510,7 @@ $surah_list = get_surah_list();
                     
                     <button type="submit" class="btn btn-primary btn-large" style="width: 100%;">رفع التلاوة</button>
                 </form>
+                <div id="uploadResult" style="display:none;margin-top:1rem"></div>
                 
                 <script>
                     // Handle recording type tabs

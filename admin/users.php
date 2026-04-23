@@ -103,6 +103,7 @@ $active_page = 'users';
             <tr>
                 <th>المستخدم</th>
                 <th>النوع</th>
+                <th>الجنس</th>
                 <th>الحالة</th>
                 <th>الرصيد</th>
                 <th>تاريخ التسجيل</th>
@@ -119,6 +120,14 @@ $active_page = 'users';
                     <?php if (!empty($u['phone'])): ?><div style="font-size:.78rem;color:var(--slate)"><?php echo htmlspecialchars($u['phone']); ?></div><?php endif; ?>
                 </td>
                 <td><span class="badge badge-<?php echo $u['user_type']; ?>"><?php echo $u['user_type']==='student'?'طالب':($u['user_type']==='teacher'?'معلم':'أدمن'); ?></span></td>
+                <td>
+                    <?php
+                    $g = $u['gender'] ?? '';
+                    if ($g === 'male') echo '<span style="color:#1d4ed8;font-weight:600">👨 ذكر</span>';
+                    elseif ($g === 'female') echo '<span style="color:#be185d;font-weight:600">👩 أنثى</span>';
+                    else echo '<span style="color:#94a3b8">—</span>';
+                    ?>
+                </td>
                 <td><span class="badge <?php echo $u['is_active']?'badge-active':'badge-inactive'; ?>"><?php echo $u['is_active']?'نشط':'معطل'; ?></span></td>
                 <td><?php echo number_format($u['wallet_balance']??0,0,'.',','); ?> دج</td>
                 <td style="white-space:nowrap"><?php echo date('d/m/Y', strtotime($u['created_at'])); ?></td>

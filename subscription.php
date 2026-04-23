@@ -73,7 +73,7 @@ $active_page = 'subscription';
         <h3 style="margin:0 0 .5rem;color:var(--secondary-green)">✅ لديك اشتراك نشط</h3>
         <p style="margin:0;color:var(--slate)">
             الباقة: <strong><?php echo htmlspecialchars($current_sub['name_ar']); ?></strong> —
-            تنتهي في <?php echo date('d/m/Y', strtotime($current_sub['end_date'])); ?>
+            تنتهي في <?php echo ($current_sub['duration_days'] == 0) ? '<span style="color:#065f46">♾️ مدى الحياة</span>' : date('d/m/Y', strtotime($current_sub['end_date'])); ?>
         </p>
         <p style="margin:.25rem 0 0;font-size:.9rem;color:var(--accent-green)">🎉 تستمتع بخصم 15% على جميع مدفوعات المعلمين</p>
     </div>
@@ -109,7 +109,7 @@ $active_page = 'subscription';
         $is_current = $current_sub && $current_sub['subscription_id'] == $p['id'];
         $is_popular = $i === 1;
         $feats = $plan_features[$p['name_ar']] ?? ['وصول كامل', 'خصم 15% على المعلمين'];
-        $period = $p['duration_days'] <= 31 ? '/شهر' : ($p['duration_days'] <= 366 ? '/سنة' : '');
+        $period = $p['duration_days'] == 0 ? '' : ($p['duration_days'] <= 31 ? '/شهر' : ($p['duration_days'] <= 366 ? '/سنة' : ''));
     ?>
     <div class="plan-card <?php echo $is_popular?'popular':''; ?>">
         <?php if ($is_popular): ?><div class="popular-badge">⭐ الأكثر شعبية</div><?php endif; ?>

@@ -39,10 +39,21 @@ function _r2_client() {
  */
 function upload_file(array $file, string $prefix, int $user_id): array {
     if ($file['error'] !== UPLOAD_ERR_OK) {
-        return ['success' => false, 'message' => 'خطأ في الرفع: ' . $file['error']];
+        $err_map = [
+            UPLOAD_ERR_INI_SIZE   => 'الملف أكبر من الحد المسموح في إعدادات الخادم',
+            UPLOAD_ERR_FORM_SIZE  => 'الملف أكبر من الحد المسموح في النموذج',
+            UPLOAD_ERR_PARTIAL    => 'تم رفع الملف جزئياً، حاول مجدداً',
+            UPLOAD_ERR_NO_FILE    => 'لم يتم اختيار ملف',
+            UPLOAD_ERR_NO_TMP_DIR => 'مجلد الملفات المؤقتة مفقود',
+            UPLOAD_ERR_CANT_WRITE => 'فشل كتابة الملف على القرص',
+        ];
+        return ['success' => false, 'message' => $err_map[$file['error']] ?? 'خطأ في الرفع: ' . $file['error']];
     }
     if ($file['size'] > MAX_FILE_SIZE) {
         return ['success' => false, 'message' => 'حجم الملف أكبر من الحد المسموح (100MB)'];
+    }
+    if ($file['size'] === 0) {
+        return ['success' => false, 'message' => 'الملف فارغ'];
     }
 
     $ext      = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) ?: 'bin';
@@ -64,9 +75,14 @@ function upload_file(array $file, string $prefix, int $user_id): array {
         }
     } else {
         // Local
+        if (!is_dir(UPLOAD_DIR)) {
+            if (!mkdir(UPLOAD_DIR, 0755, true) && !is_dir(UPLOAD_DIR)) {
+                return ['success' => false, 'message' => 'فشل إنشاء مجلد الرفع. تأكد من صلاحيات الكتابة.'];
+            }
+        }
         $dest = UPLOAD_DIR . $filename;
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
-            return ['success' => false, 'message' => 'فشل حفظ الملف'];
+            return ['success' => false, 'message' => 'فشل حفظ الملف. تأكد من صلاحيات الكتابة على: ' . UPLOAD_DIR];
         }
         return ['success' => true, 'path' => $filename, 'url' => '', 'message' => ''];
     }

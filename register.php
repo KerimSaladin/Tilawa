@@ -481,31 +481,11 @@ if (is_logged_in()) {
                         </small>
                     </div>
 
-                    <!-- Payment Details Section -->
-                    <div class="form-group" style="margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
-                        <h3 style="font-size: 1.2rem; color: #1A2A4A; margin-bottom: 1rem;">تفاصيل الدفع (تفعيل الفترة التجريبية)</h3>
-                        <p style="font-size: 0.9rem; color: #64748B; margin-bottom: 1rem;">
-                            لن يتم خصم أي مبلغ الآن. ستحصل على 10 أيام تجربة مجانية.
-                        </p>
-                        
-                        <div class="form-group">
-                            <label class="form-label" for="card_number">رقم البطاقة</label>
-                            <input type="text" id="card_number" name="card_number" class="form-input" required 
-                                   placeholder="0000 0000 0000 0000" pattern="[0-9\s]{13,19}">
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                            <div class="form-group">
-                                <label class="form-label" for="card_expiry">تاريخ الانتهاء</label>
-                                <input type="text" id="card_expiry" name="card_expiry" class="form-input" required 
-                                       placeholder="MM/YY" pattern="[0-9]{2}/[0-9]{2}">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="card_cvc">رمز الأمان (CVC)</label>
-                                <input type="text" id="card_cvc" name="card_cvc" class="form-input" required 
-                                       placeholder="123" pattern="[0-9]{3,4}">
-                            </div>
-                        </div>
+                    <!-- Trial info banner -->
+                    <div style="margin-top:1.5rem;border-top:1px solid #e2e8f0;padding-top:1.25rem;background:linear-gradient(135deg,rgba(64,145,108,.06),rgba(149,213,178,.08));border-radius:12px;padding:1rem 1.25rem;text-align:center;">
+                        <div style="font-size:1.5rem;margin-bottom:.4rem">🎉</div>
+                        <p style="font-size:.95rem;color:#2D6A4F;font-weight:700;margin:0">ستحصل على 30 يوماً تجريبية مجانية</p>
+                        <p style="font-size:.82rem;color:#64748B;margin:.3rem 0 0">لا يلزم إدخال بيانات الدفع الآن</p>
                     </div>
                     
                     <button type="submit" class="btn btn-secondary btn-large" style="width: 100%;">انشاء الحساب</button>
