@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/platform_settings.php';
 
 /**
  * Format amount with thousands separator for Algerian Dinar
@@ -88,7 +89,8 @@ function process_payment($pdo, $from_user_id, $to_user_id, $type, $amount, $desc
         
         if ($apply_subscription_discount && $to_user_id) {
             if (has_active_platform_subscription($pdo, $from_user_id)) {
-                $discount_amount = $amount * (PLATFORM_FEE_PERCENT / 100);
+                $discount_rate = get_subscription_discount_rate($pdo);
+                $discount_amount = $amount * ($discount_rate / 100);
                 $final_amount = $amount - $discount_amount;
             }
         }
@@ -105,7 +107,8 @@ function process_payment($pdo, $from_user_id, $to_user_id, $type, $amount, $desc
         // Process payment based on type
         if ($to_user_id && in_array($type, ['session_payment', 'course_payment'])) {
             // Teacher payment - split between teacher and platform
-            $platform_fee = $final_amount * (PLATFORM_FEE_PERCENT / 100);
+            $commission_rate = get_platform_commission_rate($pdo);
+            $platform_fee = $final_amount * ($commission_rate / 100);
             $teacher_earning = $final_amount - $platform_fee;
             
             // Add to teacher wallet

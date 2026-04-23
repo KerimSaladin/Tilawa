@@ -2,6 +2,7 @@
 require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/payment.php';
+require_once 'includes/platform_settings.php';
 
 require_login();
 $user = get_logged_in_user($pdo);
@@ -11,8 +12,9 @@ if (!$user) redirect('login.php');
 // شحن المحفظة
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['top_up'])) {
     $amount = (float)$_POST['amount'];
-    if ($amount < MIN_TOP_UP_AMOUNT || $amount > MAX_TOP_UP_AMOUNT) {
-        $_SESSION['flash_error'] = 'المبلغ يجب أن يكون بين ' . number_format(MIN_TOP_UP_AMOUNT, 0, '.', ',') . ' و ' . number_format(MAX_TOP_UP_AMOUNT, 0, '.', ',') . ' دج';
+    $wallet_limits = get_wallet_limits($pdo);
+    if ($amount < $wallet_limits['min'] || $amount > $wallet_limits['max']) {
+        $_SESSION['flash_error'] = 'المبلغ يجب أن يكون بين ' . number_format($wallet_limits['min'], 0, '.', ',') . ' و ' . number_format($wallet_limits['max'], 0, '.', ',') . ' دج';
     } else {
         $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?")->execute([$amount, $user['id']]);
         $pdo->prepare("INSERT INTO transactions (from_user_id, type, amount, description, status) VALUES (?,?,?,?,'completed')")
@@ -46,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout']) && 
 }
 
 $wallet_balance = get_wallet_balance($pdo, $user['id']);
+$wallet_limits = get_wallet_limits($pdo);
 $transactions   = get_transaction_history($pdo, $user['id'], $user['user_type'], 15);
 $active_page = 'wallet';
 ?>
@@ -123,8 +126,8 @@ $active_page = 'wallet';
         <div style="display:flex;gap:0.75rem;align-items:flex-end">
             <input type="number" id="custom_amount" class="form-input" 
                    placeholder="أدخل المبلغ" 
-                   min="<?php echo MIN_TOP_UP_AMOUNT; ?>" 
-                   max="<?php echo MAX_TOP_UP_AMOUNT; ?>" 
+                   min="<?php echo $wallet_limits['min']; ?>" 
+                   max="<?php echo $wallet_limits['max']; ?>" 
                    step="100" 
                    style="flex:1;min-width:200px"
                    oninput="updateQuickSelectButtons()">
@@ -133,8 +136,8 @@ $active_page = 'wallet';
             </button>
         </div>
         <small style="color:#94a3b8;display:block;margin-top:.25rem">
-            الحد الأدنى: <?php echo number_format(MIN_TOP_UP_AMOUNT,0,'.',','); ?> دج / 
-            الحد الأقصى: <?php echo number_format(MAX_TOP_UP_AMOUNT,0,'.',','); ?> دج
+            الحد الأدنى: <?php echo number_format($wallet_limits['min'],0,'.',','); ?> دج / 
+            الحد الأقصى: <?php echo number_format($wallet_limits['max'],0,'.',','); ?> دج
         </small>
     </div>
     
@@ -225,8 +228,8 @@ function updateQuickSelectButtons() {
 function openCardModalWithCustomAmount() {
     const amount = parseFloat(document.getElementById('custom_amount').value);
     
-    if (!amount || amount < <?php echo MIN_TOP_UP_AMOUNT; ?> || amount > <?php echo MAX_TOP_UP_AMOUNT; ?>) {
-        alert('المبلغ يجب أن يكون بين <?php echo number_format(MIN_TOP_UP_AMOUNT,0,'.',','); ?> و <?php echo number_format(MAX_TOP_UP_AMOUNT,0,'.',','); ?> دج');
+    if (!amount || amount < <?php echo $wallet_limits['min']; ?> || amount > <?php echo $wallet_limits['max']; ?>) {
+        alert('المبلغ يجب أن يكون بين <?php echo number_format($wallet_limits['min'],0,'.',','); ?> و <?php echo number_format($wallet_limits['max'],0,'.',','); ?> دج');
         return;
     }
     
@@ -259,7 +262,7 @@ function validateCard() {
     
     // Validate amount again
     const amount = parseFloat(document.getElementById('card_hidden_amount').value);
-    if (!amount || amount < <?php echo MIN_TOP_UP_AMOUNT; ?> || amount > <?php echo MAX_TOP_UP_AMOUNT; ?>) {
+    if (!amount || amount < <?php echo $wallet_limits['min']; ?> || amount > <?php echo $wallet_limits['max']; ?>) {
         alert('المبلغ غير صحيح');
         return false;
     }

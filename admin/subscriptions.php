@@ -2,10 +2,35 @@
 require_once '../includes/config.php';
 require_once '../includes/auth.php';
 require_once '../includes/functions.php';
+require_once '../includes/platform_settings.php';
 
 require_login();
 $user = get_logged_in_user($pdo);
 if (!$user || $user['user_type'] !== 'admin') redirect('../login.php');
+
+// Handle platform settings update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
+    $settings = [
+        'platform_commission_rate' => (float)($_POST['platform_commission_rate'] ?? 15),
+        'subscription_discount_rate' => (float)($_POST['subscription_discount_rate'] ?? 15),
+        'min_top_up_amount' => (int)($_POST['min_top_up_amount'] ?? 100),
+        'max_top_up_amount' => (int)($_POST['max_top_up_amount'] ?? 50000),
+        'default_wallet_balance' => (int)($_POST['default_wallet_balance'] ?? 5000),
+        'enable_subscriptions' => isset($_POST['enable_subscriptions']),
+        'trial_period_days' => (int)($_POST['trial_period_days'] ?? 7)
+    ];
+    
+    $success = true;
+    foreach ($settings as $key => $value) {
+        if (!update_platform_setting($pdo, $key, $value)) {
+            $success = false;
+            break;
+        }
+    }
+    
+    $_SESSION['flash_success'] = $success ? 'تم تحديث إعدادات المنصة بنجاح.' : 'حدث خطأ أثناء تحديث الإعدادات.';
+    redirect('subscriptions.php');
+}
 
 // إنشاء/تعديل باقة
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -16,9 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $is_lifetime  = !empty($_POST['is_lifetime']);
         $duration     = $is_lifetime ? 0 : (int)($_POST['duration_days'] ?? 30);
         $features     = trim($_POST['features'] ?? '');
+        $description  = trim($_POST['description'] ?? '');
+        $sort_order   = (int)($_POST['sort_order'] ?? 0);
         if ($name_ar && $price > 0) {
-            $pdo->prepare("INSERT INTO subscriptions (name_ar,name,price,duration_days,features) VALUES (?,?,?,?,?)")
-                ->execute([$name_ar, $name_ar, $price, $duration, $features]);
+            $pdo->prepare("INSERT INTO subscriptions (name_ar,name,price,duration_days,features,description,sort_order) VALUES (?,?,?,?,?,?,?)")
+                ->execute([$name_ar, $name_ar, $price, $duration, $features, $description, $sort_order]);
             $_SESSION['flash_success'] = 'تمت إضافة الباقة بنجاح.';
         }
     } elseif ($action === 'delete') {
@@ -33,7 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect('subscriptions.php');
 }
 
-$packages = $pdo->query("SELECT * FROM subscriptions ORDER BY price ASC")->fetchAll();
+$packages = $pdo->query("SELECT * FROM subscriptions ORDER BY sort_order ASC, price ASC")->fetchAll();
+$platform_settings = get_all_platform_settings($pdo);
 $active_subs = $pdo->query("
     SELECT us.*, u.full_name, u.email, s.name_ar, s.duration_days
     FROM user_subscriptions us
@@ -77,6 +105,68 @@ $active_page = 'subscriptions';
 
 <h2 style="margin-bottom:1.5rem">إدارة الاشتراكات</h2>
 
+<!-- إعدادات المنصة -->
+<div class="section-card">
+    <h3>⚙️ إعدادات المنصة</h3>
+    <form method="POST" onsubmit="return confirm('هل تريد تحديث إعدادات المنصة؟')">
+        <input type="hidden" name="update_settings" value="1">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.5rem;margin-bottom:1.5rem">
+            <div class="form-group">
+                <label class="form-label">عمولة المنصة (%)</label>
+                <input type="number" name="platform_commission_rate" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'platform_commission_rate', 15); ?>" 
+                       min="0" max="100" step="0.1" required>
+                <small style="color:#94a3b8">النسبة المئوية التي ت takenها المنصة من كل دفعة</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">خصم الاشتراك (%)</label>
+                <input type="number" name="subscription_discount_rate" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'subscription_discount_rate', 15); ?>" 
+                       min="0" max="100" step="0.1" required>
+                <small style="color:#94a3b8">الخصم الذي يحصل عليه المشتركين</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">حد الشحن الأدنى (دج)</label>
+                <input type="number" name="min_top_up_amount" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'min_top_up_amount', 100); ?>" 
+                       min="1" required>
+                <small style="color:#94a3b8">أقل مبلغ يمكن شحنه</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">حد الشحن الأقصى (دج)</label>
+                <input type="number" name="max_top_up_amount" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'max_top_up_amount', 50000); ?>" 
+                       min="1" required>
+                <small style="color:#94a3b8">أعلى مبلغ يمكن شحنه</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">رصيد افتراضي (دج)</label>
+                <input type="number" name="default_wallet_balance" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'default_wallet_balance', 5000); ?>" 
+                       min="0" required>
+                <small style="color:#94a3b8">الرصيد الافتراضي للمستخدمين الجدد</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">فترة التجربة (أيام)</label>
+                <input type="number" name="trial_period_days" class="form-input" 
+                       value="<?php echo get_platform_setting($pdo, 'trial_period_days', 7); ?>" 
+                       min="0" required>
+                <small style="color:#94a3b8">مدة التجربة المجانية للمستخدمين الجدد</small>
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem">
+            <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer">
+                <input type="checkbox" name="enable_subscriptions" value="1" 
+                       <?php echo get_platform_setting($pdo, 'enable_subscriptions', true) ? 'checked' : ''; ?> 
+                       style="width:18px;height:18px;accent-color:#40916C">
+                <span style="font-weight:600">تفعيل نظام الاشتراكات</span>
+            </label>
+            <small style="color:#94a3b8">إيقاف هذا سيخفي جميع خيارات الاشتراك</small>
+        </div>
+        <button type="submit" class="btn btn-primary">تحديث الإعدادات</button>
+    </form>
+</div>
+
 <!-- الباقات الحالية -->
 <div class="section-card">
     <h3>باقات الاشتراك (<?php echo count($packages); ?>)</h3>
@@ -86,6 +176,7 @@ $active_page = 'subscriptions';
             <div class="pkg-name"><?php echo htmlspecialchars($p['name_ar']); ?><?php if ($p['duration_days'] == 0) echo ' <span style="background:#fef3c7;color:#92400e;font-size:.72rem;padding:.2rem .5rem;border-radius:50px;margin-right:.4rem">مدى الحياة ♾️</span>'; ?></div>
             <div class="pkg-price"><?php echo number_format($p['price'],0,'.',','); ?> دج</div>
             <div class="pkg-period"><?php echo $p['duration_days'] == 0 ? 'مدى الحياة' : $p['duration_days'] . ' يوم'; ?></div>
+            <?php if ($p['description']): ?><div style="font-size:.8rem;color:var(--slate);margin-top:.5rem;font-style:italic"><?php echo htmlspecialchars($p['description']); ?></div><?php endif; ?>
             <?php if ($p['features']): ?><div style="font-size:.8rem;color:var(--slate);margin-top:.5rem"><?php echo htmlspecialchars($p['features']); ?></div><?php endif; ?>
             <form method="POST" style="margin-top:.75rem" onsubmit="return confirm('هل تريد حذف هذه الباقة؟')">
                 <input type="hidden" name="action" value="delete">
@@ -100,7 +191,7 @@ $active_page = 'subscriptions';
         <h4 style="margin-bottom:1rem;font-weight:700">+ إضافة باقة جديدة</h4>
         <form method="POST">
             <input type="hidden" name="action" value="create">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
                 <div class="form-group" style="margin:0">
                     <label class="form-label">اسم الباقة (عربي)</label>
                     <input type="text" name="name_ar" class="form-input" placeholder="مثال: شهري" required>
@@ -113,10 +204,18 @@ $active_page = 'subscriptions';
                     <label class="form-label">المدة (يوم)</label>
                     <input type="number" name="duration_days" id="duration_days_input" class="form-input" value="30" min="1">
                 </div>
+                <div class="form-group" style="margin:0">
+                    <label class="form-label">الترتيب</label>
+                    <input type="number" name="sort_order" class="form-input" value="0" min="0">
+                </div>
             </div>
             <div class="form-group" style="margin:0 0 1rem;display:flex;align-items:center;gap:.75rem">
                 <input type="checkbox" id="is_lifetime" name="is_lifetime" value="1" onchange="document.getElementById('duration_days_input').disabled=this.checked" style="width:18px;height:18px;accent-color:#40916C">
                 <label for="is_lifetime" style="margin:0;font-weight:600;cursor:pointer">♾️ اشتراك مدى الحياة (بدون انتهاء)</label>
+            </div>
+            <div class="form-group" style="margin:0 0 1rem">
+                <label class="form-label">الوصف</label>
+                <textarea name="description" class="form-input" rows="2" placeholder="وصف مفصل للباقة..."></textarea>
             </div>
             <div class="form-group" style="margin:0 0 1rem">
                 <label class="form-label">المميزات (مفصولة بفاصلة)</label>

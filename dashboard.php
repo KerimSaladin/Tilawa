@@ -416,11 +416,11 @@ if ($user['user_type'] === 'teacher') {
     <?php if ($subscription): ?>
     <div class="sub-banner">
         <span class="sub-text">✅ اشتراك نشط — <?php echo htmlspecialchars($subscription['name_ar']); ?> (حتى <?php echo date('d/m/Y', strtotime($subscription['end_date'])); ?>)</span>
-        <span style="font-weight:700;color:var(--secondary-green)">🎉 خصم 15% على جميع الجلسات</span>
+        <span style="font-weight:700;color:var(--secondary-green)">🎉 خصومات على جميع الجلسات</span>
     </div>
     <?php else: ?>
     <div style="background:linear-gradient(135deg,rgba(91,139,214,.08),rgba(45,74,138,.05));border:1px solid rgba(91,139,214,.2);border-radius:var(--radius-md);padding:.9rem 1.25rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem">
-        <span style="color:var(--slate);font-size:.9rem">💡 اشترك للحصول على <strong>خصم 15%</strong> على جميع الجلسات — الاشتراك اختياري</span>
+        <span style="color:var(--slate);font-size:.9rem">💡 اشترك للحصول على <strong>خصومات </strong> على جميع الجلسات — الاشتراك اختياري</span>
         <a href="subscription.php" class="btn btn-outline" style="padding:.4rem 1rem;font-size:.85rem">عرض الباقات</a>
     </div>
     <?php endif; ?>
@@ -454,6 +454,7 @@ if ($user['user_type'] === 'teacher') {
         <a href="live_session.php" class="action-card"><div class="action-icon"><img src="assets/images/mic.svg" alt=""></div><div class="action-title">الجلسات</div></a>
         <a href="wallet.php" class="action-card"><div class="action-icon"><img src="assets/images/chart.svg" alt=""></div><div class="action-title">المحفظة</div></a>
     </div>
+
 
     <!-- آخر التصحيحات -->
     <?php if (count($recent_corrections) > 0): ?>

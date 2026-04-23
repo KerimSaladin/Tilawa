@@ -3,6 +3,7 @@ require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/payment.php';
 require_once 'includes/functions.php';
+require_once 'includes/platform_settings.php';
 
 require_login();
 $user = get_logged_in_user($pdo);
@@ -75,7 +76,7 @@ $active_page = 'subscription';
             الباقة: <strong><?php echo htmlspecialchars($current_sub['name_ar']); ?></strong> —
             تنتهي في <?php echo ($current_sub['duration_days'] == 0) ? '<span style="color:#065f46">♾️ مدى الحياة</span>' : date('d/m/Y', strtotime($current_sub['end_date'])); ?>
         </p>
-        <p style="margin:.25rem 0 0;font-size:.9rem;color:var(--accent-green)">🎉 تستمتع بخصم 15% على جميع مدفوعات المعلمين</p>
+        <p style="margin:.25rem 0 0;font-size:.9rem;color:var(--accent-green)">🎉 تستمتع بخصم <?php echo get_subscription_discount_rate($pdo); ?>% على جميع مدفوعات المعلمين</p>
     </div>
     <div>
         <div style="font-weight:700;font-size:1.1rem;color:var(--royal-blue)"><?php echo number_format($wallet_balance,0,'.',','); ?> دج</div>
@@ -92,7 +93,7 @@ $active_page = 'subscription';
 <!-- عنوان -->
 <div style="text-align:center;margin-bottom:2rem">
     <h1>باقات الاشتراك</h1>
-    <p style="color:var(--slate)">الاشتراك اختياري تماماً — يمنحك <strong>خصم 15%</strong> على جميع الجلسات مع المعلمين</p>
+    <p style="color:var(--slate)">الاشتراك اختياري تماماً — يمنحك <strong>خصم <?php echo get_subscription_discount_rate($pdo); ?>%</strong> على جميع الجلسات مع المعلمين</p>
     <p style="color:var(--accent-green);font-size:.9rem;margin-top:.4rem">✅ يمكنك استخدام المنصة بالكامل بدون اشتراك</p>
     <p style="color:var(--slate);font-size:.9rem">رصيدك الحالي: <strong><?php echo number_format($wallet_balance,0,'.',','); ?> دج</strong> — <a href="wallet.php">شحن المحفظة</a></p>
 </div>
@@ -100,15 +101,10 @@ $active_page = 'subscription';
 <?php if (count($packages) > 0): ?>
 <div class="plans-grid">
     <?php
-    $plan_features = [
-        'شهري'      => ['وصول كامل لمدة شهر', 'خصم 15% على جميع المعلمين', 'رفع تلاوات غير محدودة', 'الانضمام للجلسات الجماعية'],
-        'سنوي'      => ['وصول كامل لسنة كاملة', 'خصم 15% على جميع المعلمين', 'رفع تلاوات غير محدودة', 'الانضمام للجلسات الجماعية', 'توفير 72% مقارنة بالشهري'],
-        'مدى الحياة'=> ['وصول دائم مدى الحياة', 'خصم 15% على جميع المعلمين', 'رفع تلاوات غير محدودة', 'الانضمام للجلسات الجماعية', 'أفضل قيمة'],
-    ];
+    // Remove hardcoded features - use dynamic database values instead
     foreach ($packages as $i => $p):
         $is_current = $current_sub && $current_sub['subscription_id'] == $p['id'];
         $is_popular = $i === 1;
-        $feats = $plan_features[$p['name_ar']] ?? ['وصول كامل', 'خصم 15% على المعلمين'];
         $period = $p['duration_days'] == 0 ? '' : ($p['duration_days'] <= 31 ? '/شهر' : ($p['duration_days'] <= 366 ? '/سنة' : ''));
     ?>
     <div class="plan-card <?php echo $is_popular?'popular':''; ?>">
@@ -117,9 +113,23 @@ $active_page = 'subscription';
         <div class="plan-name" style="margin-top:<?php echo $is_popular?'2rem':'0'; ?>"><?php echo htmlspecialchars($p['name_ar']); ?></div>
         <div class="plan-price"><?php echo number_format($p['price'],0,'.',','); ?></div>
         <div class="plan-period">دج <?php echo $period; ?></div>
+        <?php if ($p['description']): ?>
+        <div style="font-size:.9rem;color:var(--slate);margin:1rem 0;text-align:right;line-height:1.4">
+            <?php echo htmlspecialchars($p['description']); ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($p['features']): ?>
         <ul class="plan-features">
-            <?php foreach ($feats as $f): ?><li><?php echo $f; ?></li><?php endforeach; ?>
+            <?php $features_array = explode(',', $p['features']); foreach ($features_array as $f): ?>
+            <li><?php echo trim($f); ?></li>
+            <?php endforeach; ?>
         </ul>
+        <?php else: ?>
+        <ul class="plan-features">
+            <li>وصول كامل للمنصة</li>
+            <li>خصم <?php echo get_subscription_discount_rate($pdo); ?>% على جميع المعلمين</li>
+        </ul>
+        <?php endif; ?>
         <hr style="border:none;border-top:1px solid var(--sand);margin:1rem 0">
         <?php if (!$is_current): ?>
         <button onclick="subscribe(<?php echo $p['id']; ?>,'<?php echo addslashes($p['name_ar']); ?>',<?php echo $p['price']; ?>)"
