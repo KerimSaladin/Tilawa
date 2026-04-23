@@ -46,7 +46,8 @@ define('PLAN_MONTHLY_PRICE',   2000);
 define('PLAN_YEARLY_PRICE',    15000);
 define('PLAN_LIFETIME_PRICE',  35000);
 define('DEFAULT_WALLET_BALANCE', 5000);
-define('TOP_UP_AMOUNTS',       [2000, 5000, 10000, 20000]);
+define('MIN_TOP_UP_AMOUNT',     100);
+define('MAX_TOP_UP_AMOUNT',     50000);
 
 // ── FFmpeg ─────────────────────────────────────────────────────────────────────
 define('FFMPEG_PATH',             env('FFMPEG_PATH', ''));
