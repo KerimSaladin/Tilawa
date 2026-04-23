@@ -34,7 +34,7 @@ try {
     }
 
     if ($action === 'check_incoming' && $method === 'GET') {
-        $stmt = $pdo->prepare("SELECT c.*, u.full_name AS caller_name FROM calls c JOIN users u ON c.caller_id = u.id WHERE c.callee_id = ? AND c.status = 'ringing' AND c.created_at > NOW() - INTERVAL '30 seconds' ORDER BY c.created_at DESC LIMIT 1");
+        $stmt = $pdo->prepare("SELECT c.id, c.type, c.status, u.full_name AS caller_name FROM calls c JOIN users u ON c.caller_id = u.id WHERE c.callee_id = ? AND c.status = 'ringing' AND c.created_at > NOW() - INTERVAL '30 seconds' ORDER BY c.created_at DESC LIMIT 1");
         $stmt->execute([$user['id']]);
         $call = $stmt->fetch();
         echo json_encode(['success' => true, 'call' => $call ?: null]);

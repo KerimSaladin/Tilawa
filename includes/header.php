@@ -100,3 +100,127 @@ $base = $in_admin_folder ? '../' : '';
         </a>
     </div>
 </div>
+
+<!-- ═══ Incoming-call toast (injected on every dashboard page) ═══ -->
+<style>
+#incomingCallToast{
+  position:fixed;top:1.25rem;left:50%;transform:translateX(-50%) translateY(-120px);
+  z-index:9999;background:#1e1e2e;border:1px solid rgba(99,102,241,.45);
+  border-radius:18px;padding:1.1rem 1.4rem;display:flex;align-items:center;gap:1rem;
+  box-shadow:0 8px 32px rgba(0,0,0,.55);min-width:300px;max-width:420px;
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none
+}
+#incomingCallToast.show{transform:translateX(-50%) translateY(0);pointer-events:auto}
+.ict-avatar{
+  width:46px;height:46px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,#6366f1,#a78bfa);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;font-weight:700;color:#fff;position:relative
+}
+.ict-pulse{
+  position:absolute;inset:-6px;border-radius:50%;
+  border:2px solid rgba(99,102,241,.6);animation:ictPulse 1.4s ease-out infinite
+}
+@keyframes ictPulse{0%{transform:scale(.85);opacity:0}50%{opacity:1}100%{transform:scale(1.25);opacity:0}}
+.ict-info{flex:1;min-width:0}
+.ict-name{font-weight:700;font-size:.95rem;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ict-sub{font-size:.78rem;color:#94a3b8;margin-top:.1rem}
+.ict-btns{display:flex;gap:.5rem;flex-shrink:0}
+.ict-btn{
+  border:none;border-radius:50px;padding:.45rem .9rem;font-size:.8rem;font-weight:700;
+  cursor:pointer;font-family:Cairo,sans-serif;transition:filter .15s
+}
+.ict-btn:hover{filter:brightness(1.15)}
+.ict-accept{background:#22c55e;color:#fff}
+.ict-decline{background:#ef4444;color:#fff}
+</style>
+
+<div id="incomingCallToast" role="alertdialog" aria-live="assertive" aria-label="مكالمة واردة">
+  <div class="ict-avatar" id="ictAvatar">?<div class="ict-pulse"></div></div>
+  <div class="ict-info">
+    <div class="ict-name" id="ictName">—</div>
+    <div class="ict-sub"  id="ictSub">مكالمة واردة</div>
+  </div>
+  <div class="ict-btns">
+    <button class="ict-btn ict-accept"  id="ictAccept">📞 قبول</button>
+    <button class="ict-btn ict-decline" id="ictDecline">📵 رفض</button>
+  </div>
+</div>
+
+<audio id="ringtoneAudio" loop preload="none">
+  <source src="<?php echo $base; ?>assets/audio/ringtone.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+(function(){
+  const CALLS_API = '<?php echo $base; ?>api/calls.php';
+  const toast     = document.getElementById('incomingCallToast');
+  const ictName   = document.getElementById('ictName');
+  const ictSub    = document.getElementById('ictSub');
+  const ictAvatar = document.getElementById('ictAvatar');
+  const ictAccept = document.getElementById('ictAccept');
+  const ictDecline= document.getElementById('ictDecline');
+  const ringtone  = document.getElementById('ringtoneAudio');
+
+  let activeCallId  = null;
+  let dismissed     = new Set();
+  let onCallPage    = /\/call\.php/.test(window.location.pathname);
+
+  if (onCallPage) return; // caller/callee already on call page
+
+  function showToast(call) {
+    if (dismissed.has(call.id)) return;
+    activeCallId = call.id;
+    const initial = (call.caller_name || '?').charAt(0).toUpperCase();
+    ictAvatar.textContent = initial;
+    // re-attach pulse (textContent wipes children)
+    const pulse = document.createElement('div');
+    pulse.className = 'ict-pulse';
+    ictAvatar.appendChild(pulse);
+    ictName.textContent = call.caller_name || 'مجهول';
+    ictSub.textContent  = call.type === 'video' ? '📹 مكالمة فيديو واردة' : '🎤 مكالمة صوتية واردة';
+    toast.classList.add('show');
+    ringtone.play().catch(()=>{});
+  }
+
+  function hideToast() {
+    toast.classList.remove('show');
+    ringtone.pause();
+    ringtone.currentTime = 0;
+  }
+
+  ictAccept.addEventListener('click', () => {
+    if (!activeCallId) return;
+    hideToast();
+    window.location.href = '<?php echo $base; ?>call.php?call=' + activeCallId;
+  });
+
+  ictDecline.addEventListener('click', async () => {
+    if (!activeCallId) return;
+    dismissed.add(activeCallId);
+    hideToast();
+    const fd = new FormData();
+    fd.append('action', 'decline');
+    fd.append('call_id', activeCallId);
+    await fetch(CALLS_API, { method:'POST', body:fd, credentials:'include' }).catch(()=>{});
+    activeCallId = null;
+  });
+
+  async function pollIncoming() {
+    try {
+      const r = await fetch(CALLS_API + '?action=check_incoming', {credentials:'include'});
+      const j = await r.json();
+      if (j.success && j.call && !dismissed.has(j.call.id)) {
+        showToast(j.call);
+      } else if (!j.call && activeCallId) {
+        // caller hung up before answer
+        hideToast();
+        activeCallId = null;
+      }
+    } catch {}
+  }
+
+  pollIncoming();
+  setInterval(pollIncoming, 3000);
+})();
+</script>
