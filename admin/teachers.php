@@ -28,14 +28,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_success'] = 'تم تحديث حالة الامتحان.';
         }
     }
-    redirect('teachers.php' . (isset($_GET['filter']) ? '?filter=' . urlencode($_GET['filter']) : ''));
+    redirect('teachers.php' . (isset($_GET['filter']) ? '?filter=' . urlencode($_GET['filter']) : '') . (isset($_GET['gender']) ? '&gender=' . urlencode($_GET['gender']) : ''));
 }
 
 $filter = $_GET['filter'] ?? 'all';
+$gender = $_GET['gender'] ?? 'all';
+
 $where  = "user_type='teacher'";
 if ($filter === 'pending')  $where .= " AND teacher_status='pending'";
 if ($filter === 'approved') $where .= " AND teacher_status='approved'";
 if ($filter === 'rejected') $where .= " AND teacher_status='rejected'";
+if ($gender !== 'all')      $where .= " AND gender=" . $pdo->quote($gender);
 
 $teachers = $pdo->query("
     SELECT u.*,
@@ -92,6 +95,15 @@ $active_page = 'teachers';
     <a href="?filter=pending"  class="filter-tab <?php echo $filter==='pending'?'active':''; ?>">قيد المراجعة (<?php echo $counts['pending']??0; ?>)</a>
     <a href="?filter=approved" class="filter-tab <?php echo $filter==='approved'?'active':''; ?>">موافق عليهم (<?php echo $counts['approved']??0; ?>)</a>
     <a href="?filter=rejected" class="filter-tab <?php echo $filter==='rejected'?'active':''; ?>">مرفوضون (<?php echo $counts['rejected']??0; ?>)</a>
+</div>
+
+<!-- فلتر الجنس -->
+<div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+    <span style="color:var(--slate);font-size:.9rem;font-weight:600">الجنس:</span>
+    <?php $gbase = '?filter=' . urlencode($filter); ?>
+    <a href="<?php echo $gbase; ?>" class="filter-tab <?php echo $gender==='all'?'active':''; ?>">الكل</a>
+    <a href="<?php echo $gbase; ?>&gender=male"   class="filter-tab <?php echo $gender==='male'?'active':''; ?>">👨 ذكر</a>
+    <a href="<?php echo $gbase; ?>&gender=female" class="filter-tab <?php echo $gender==='female'?'active':''; ?>">👩 أنثى</a>
 </div>
 
 <div class="section-card">

@@ -43,6 +43,17 @@ try {
         ON CONFLICT (student_id, teacher_id) DO UPDATE SET rating=EXCLUDED.rating, comment=EXCLUDED.comment
     ");
     $stmt->execute([$user['id'], $teacher_id, $rating, $comment ?: null]);
+
+    // Log to activity_logs so admin sees written feedback
+    $tn_stmt = $pdo->prepare("SELECT full_name FROM users WHERE id=?");
+    $tn_stmt->execute([$teacher_id]);
+    $teacher_name = $tn_stmt->fetchColumn() ?: 'معلم #' . $teacher_id;
+    $log_desc = "تقييم للمعلم {$teacher_name}: {$rating}/5";
+    if ($comment) {
+        $log_desc .= ' — التعليق: ' . mb_substr($comment, 0, 200, 'UTF-8');
+    }
+    log_activity($pdo, $user['id'], 'teacher_rated', $log_desc, 'user', $teacher_id);
+
     echo json_encode(['success'=>true,'message'=>'تم إرسال تقييمك بنجاح!']);
 } catch (PDOException $e) {
     echo json_encode(['success'=>false,'message'=>'حدث خطأ أثناء الحفظ']);

@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/config.php';
 require_once '../includes/auth.php';
+require_once '../includes/functions.php';
+require_once '../includes/storage.php';
 
 require_login();
 $user = get_logged_in_user($pdo);
@@ -11,7 +13,8 @@ if (!$user || $user['user_type'] !== 'admin') {
 
 // Handle resource operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+    try {
+        $action = $_POST['action'] ?? '';
     
     if ($action === 'add_resource') {
         $title = sanitize_input($_POST['title'] ?? '');
@@ -29,22 +32,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($type !== 'link' && isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
                 $allowed_types = [
                     'video' => ['video/mp4', 'video/webm', 'video/ogg'],
-                    'pdf' => ['application/pdf']
+                    'pdf'   => ['application/pdf'],
                 ];
-                
-                if (!in_array($_FILES['file']['type'], $allowed_types[$type])) {
+
+                if (!isset($allowed_types[$type]) || !in_array($_FILES['file']['type'], $allowed_types[$type])) {
                     $_SESSION['error'] = 'نوع الملف غير مدعوم';
                 } elseif ($_FILES['file']['size'] > MAX_FILE_SIZE) {
                     $_SESSION['error'] = 'حجم الملف كبير جداً';
                 } else {
-                    $extension = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
-                    $filename = 'resource_' . time() . '_' . uniqid() . '.' . $extension;
-                    $filepath = UPLOAD_DIR . $filename;
-                    
-                    if (move_uploaded_file($_FILES['file']['tmp_name'], $filepath)) {
-                        $file_path = $filename;
+                    // Use centralised upload_file() — handles R2 and local
+                    $upload_result = upload_file($_FILES['file'], 'resource', $user['id']);
+                    if ($upload_result['success']) {
+                        $file_path = USE_R2 ? $upload_result['url'] : $upload_result['path'];
                     } else {
-                        $_SESSION['error'] = 'فشل رفع الملف';
+                        $_SESSION['error'] = $upload_result['message'];
                     }
                 }
             }
@@ -115,12 +116,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['error'] = 'فشل حذف المورد';
             }
         }
+        }
+    } catch (Throwable $e) {
+        $_SESSION['error'] = 'حدث خطأ: ' . $e->getMessage();
     }
+    // Redirect after POST to avoid re-submit on refresh
+    header('Location: resources_admin.php');
+    exit;
 }
 
 // Get all resources
-$stmt = $pdo->query("SELECT * FROM resources ORDER BY created_at DESC");
-$resources = $stmt->fetchAll();
+try {
+    $stmt = $pdo->query("SELECT * FROM resources ORDER BY created_at DESC");
+    $resources = $stmt->fetchAll();
+} catch (Throwable $e) {
+    $resources = [];
+    $_SESSION['error'] = 'خطأ في قاعدة البيانات: ' . $e->getMessage();
+}
 ?>
 
 <!DOCTYPE html>

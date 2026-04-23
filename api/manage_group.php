@@ -60,11 +60,20 @@ try {
             exit;
         }
         
-        // Check gender match only when both teacher and student have gender set
-        if (!empty($user['gender']) && !empty($student['gender']) && $student['gender'] !== $user['gender']) {
+        // Strict gender check — both must have a gender set and they must match
+        if (!empty($user['gender']) && $student['gender'] !== $user['gender']) {
             header('Content-Type: application/json');
             $gender_text = $user['gender'] === 'male' ? 'ذكر' : 'أنثى';
             echo json_encode(['success' => false, 'message' => "لا يمكن إضافة طالب من جنس مختلف. المعلم/المعلمة ({$gender_text}) يمكنه/ها تدريس {$gender_text} فقط"]);
+            exit;
+        }
+
+        // Payment check — student must have an enrollment with this teacher
+        $stmt = $pdo->prepare("SELECT id FROM enrollments WHERE student_id = ? AND teacher_id = ? LIMIT 1");
+        $stmt->execute([$student_id, $user['id']]);
+        if (!$stmt->fetch()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'هذا الطالب لم يدفع لك بعد. يجب أن يكون الطالب مسجلاً (مدفوعاً) معك أولاً']);
             exit;
         }
         

@@ -142,7 +142,16 @@ usort($uploads, function($a, $b) {
                                 <td><?php echo htmlspecialchars($file['display_name']); ?></td>
                                 <td><?php echo format_date($file['uploaded_at']); ?></td>
                                 <td>
-                                    <a href="../uploads/<?php echo htmlspecialchars($file['file_path']); ?>" target="_blank" class="btn btn-outline" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;">تحميل/عرض</a>
+                                    <?php
+                                    $path = $file['file_path'];
+                                    // Build correct URL regardless of R2 or local
+                                    if (str_starts_with($path, 'http')) {
+                                        $view_url = htmlspecialchars($path);
+                                    } else {
+                                        $view_url = '../serve_resource.php?file=' . urlencode(basename($path));
+                                    }
+                                    ?>
+                                    <a href="<?php echo $view_url; ?>" target="_blank" class="btn btn-outline" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;">تحميل/عرض</a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

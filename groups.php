@@ -94,13 +94,40 @@ foreach ($groups as &$group) {
     $group['leaderboard'] = array_slice($group['students'], 0, 3);
 }
 
-// Get all students (filter by gender only if teacher has gender set)
+// Get students the teacher can add:
+// 1. Must match teacher's gender (strict — no NULL bypass)
+// 2. Must have an enrollment (paid) with this teacher
 if (!empty($user['gender'])) {
-    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = TRUE AND (gender = ? OR gender IS NULL) ORDER BY full_name");
-    $stmt->execute([$user['gender']]);
+    // Paid students of same gender
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT u.id, u.full_name, u.email
+        FROM users u
+        WHERE u.user_type  = 'student'
+          AND u.is_active   = TRUE
+          AND u.gender      = ?
+          AND EXISTS (
+              SELECT 1 FROM enrollments e
+              WHERE e.student_id  = u.id
+                AND e.teacher_id  = ?
+          )
+        ORDER BY u.full_name
+    ");
+    $stmt->execute([$user['gender'], $user['id']]);
 } else {
-    $stmt = $pdo->prepare("SELECT id, full_name, email FROM users WHERE user_type = 'student' AND is_active = TRUE ORDER BY full_name");
-    $stmt->execute();
+    // No gender set — show paid students regardless of gender
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT u.id, u.full_name, u.email
+        FROM users u
+        WHERE u.user_type = 'student'
+          AND u.is_active  = TRUE
+          AND EXISTS (
+              SELECT 1 FROM enrollments e
+              WHERE e.student_id  = u.id
+                AND e.teacher_id  = ?
+          )
+        ORDER BY u.full_name
+    ");
+    $stmt->execute([$user['id']]);
 }
 $all_students = $stmt->fetchAll();
 ?>
@@ -603,16 +630,24 @@ $all_students = $stmt->fetchAll();
                             <h4 style="margin-bottom: 0.75rem; color: var(--muted-blue);">إضافة طالب:</h4>
                             <?php if (!empty($user['gender'])): ?>
                                 <p style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
-                                    <strong>ملاحظة:</strong> يمكنك إضافة <?php echo $user['gender'] === 'male' ? 'الطلاب الذكور فقط' : 'الطالبات الإناث فقط'; ?>
+                                    <strong>ملاحظة:</strong> يمكنك إضافة <?php echo $user['gender'] === 'male' ? 'الطلاب الذكور' : 'الطالبات الإناث'; ?> الذين دفعوا لك فقط.
                                 </p>
                             <?php endif; ?>
+                            <?php if (empty($all_students)): ?>
+                                <p style="font-size:.9rem;color:var(--slate);padding:.75rem;background:var(--warm-cream);border-radius:var(--radius-md)">
+                                    لا يوجد طلاب مؤهلون للإضافة. الطلاب يظهرون هنا بعد إتمام الدفع لك.
+                                </p>
+                            <?php else: ?>
+                            <?php if (empty($all_students)): ?>
+                                <?php // already shown above — no form to render ?>
+                            <?php else: ?>
                             <form method="POST" action="api/manage_group.php" style="display: flex; gap: 0.5rem; align-items: flex-end;">
                                 <input type="hidden" name="action" value="add_student">
                                 <input type="hidden" name="group_id" value="<?php echo $group['id']; ?>">
                                 <select name="student_id" class="form-input" required style="flex: 1;">
                                     <option value="">اختر طالب...</option>
                                     <?php foreach ($all_students as $student): ?>
-                                        <?php 
+                                        <?php
                                         $is_in_group = false;
                                         foreach ($group['students'] as $group_student) {
                                             if ($group_student['id'] == $student['id']) {
@@ -630,6 +665,8 @@ $all_students = $stmt->fetchAll();
                                 </select>
                                 <button type="submit" class="btn btn-primary">إضافة</button>
                             </form>
+                            <?php endif; ?>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <?php endforeach; ?>

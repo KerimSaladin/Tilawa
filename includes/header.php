@@ -64,13 +64,17 @@ $base = $in_admin_folder ? '../' : '';
 
         <!-- الإشعارات -->
         <div class="notifications-container" style="position:relative;z-index:1002">
-            <button class="icon-btn bell-icon" id="notificationsBtn" title="الإشعارات" aria-label="الإشعارات">
+            <button class="icon-btn bell-icon" id="notificationsBtn" title="الإشعارات" aria-label="الإشعارات" style="position:relative">
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0v5l2 2H4l2-2V8"/><path d="M10 21h4"/></svg>
+                <span id="globalUnreadBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:.68rem;font-weight:700;line-height:18px;text-align:center;border:2px solid white"></span>
             </button>
             <div class="notifications-dropdown" id="notificationsDropdown">
                 <div class="notifications-header">الإشعارات</div>
                 <div class="notifications-list" id="notificationsList">
                     <div class="notification-item">لا توجد إشعارات جديدة</div>
+                </div>
+                <div style="padding:.75rem;border-top:1px solid var(--sand);text-align:center">
+                    <a href="<?php echo $base; ?>messages.php" style="font-size:.85rem;color:var(--royal-blue);font-weight:600">عرض كل الرسائل</a>
                 </div>
             </div>
         </div>
@@ -101,7 +105,66 @@ $base = $in_admin_folder ? '../' : '';
     </div>
 </div>
 
-<!-- ═══ Incoming-call toast (injected on every dashboard page) ═══ -->
+<!-- ═══ Global unread-message badge polling ═══ -->
+<script>
+(function() {
+    const MSG_API  = '<?php echo $base; ?>api/messages.php?action=unread_count';
+    const badge    = document.getElementById('globalUnreadBadge');
+    const listEl   = document.getElementById('notificationsList');
+    const bellBtn  = document.getElementById('notificationsBtn');
+    let prevCount  = 0;
+
+    <?php if (!$is_admin): // admins don't have the messages module ?>
+    async function pollUnread() {
+        try {
+            const r = await fetch(MSG_API, { credentials: 'include' });
+            const d = await r.json();
+            if (!d.success) return;
+            const cnt = d.count || 0;
+
+            // Update badge
+            if (cnt > 0) {
+                badge.style.display = 'block';
+                badge.textContent   = cnt > 99 ? '99+' : cnt;
+            } else {
+                badge.style.display = 'none';
+            }
+
+            // Update dropdown list when count increases
+            if (cnt > prevCount && cnt > 0) {
+                listEl.innerHTML = `
+                    <div class="notification-item" style="display:flex;align-items:center;gap:.6rem;padding:.85rem 1rem">
+                        <span style="font-size:1.3rem">💬</span>
+                        <span>لديك <strong>${cnt}</strong> رسالة غير مقروءة</span>
+                    </div>`;
+                // Browser notification (if permitted)
+                if (Notification.permission === 'granted') {
+                    new Notification('رتل معي — رسائل جديدة', {
+                        body: `لديك ${cnt} رسالة غير مقروءة`,
+                        icon: '<?php echo $base; ?>assets/images/logo.svg'
+                    });
+                }
+            } else if (cnt === 0) {
+                listEl.innerHTML = '<div class="notification-item">لا توجد إشعارات جديدة</div>';
+            }
+            prevCount = cnt;
+        } catch {}
+    }
+
+    // Request notification permission on first interaction
+    bellBtn?.addEventListener('click', () => {
+        if (Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    });
+
+    pollUnread();
+    setInterval(pollUnread, 5000); // every 5 seconds
+    <?php endif; ?>
+})();
+</script>
+
+
 <style>
 #incomingCallToast{
   position:fixed;top:1.25rem;left:50%;transform:translateX(-50%) translateY(-120px);

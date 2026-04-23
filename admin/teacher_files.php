@@ -127,7 +127,14 @@ $teachers = $stmt->fetchAll();
                                 <td><?php echo $file['file_size'] ? number_format($file['file_size'] / 1024, 2) . ' KB' : '-'; ?></td>
                                 <td><?php echo format_date($file['uploaded_at']); ?></td>
                                 <td>
-                                    <a href="<?php echo file_url($file['file_path']); ?>" target="_blank" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                                    <a href="<?php
+                                        $fp = $file['file_path'];
+                                        if (str_starts_with($fp, 'http')) {
+                                            echo htmlspecialchars($fp);
+                                        } else {
+                                            echo '../serve_resource.php?file=' . urlencode(basename($fp));
+                                        }
+                                    ?>" target="_blank" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
                                         عرض
                                     </a>
                                 </td>

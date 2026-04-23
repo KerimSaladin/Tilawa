@@ -32,10 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $search = $_GET['q'] ?? '';
 $type   = $_GET['type'] ?? 'all';
+$gender = $_GET['gender'] ?? 'all';
 
 $params = [];
 $where  = "1=1";
-if ($type !== 'all') { $where .= " AND user_type=?"; $params[] = $type; }
+if ($type !== 'all')   { $where .= " AND user_type=?";   $params[] = $type; }
+if ($gender !== 'all') { $where .= " AND gender=?";       $params[] = $gender; }
 if ($search) { $where .= " AND (full_name LIKE ? OR email LIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
 
 $stmt = $pdo->prepare("SELECT * FROM users WHERE $where ORDER BY created_at DESC LIMIT 100");
@@ -91,6 +93,11 @@ $active_page = 'users';
         <option value="student" <?php echo $type==='student'?'selected':''; ?>>الطلاب</option>
         <option value="teacher" <?php echo $type==='teacher'?'selected':''; ?>>المعلمون</option>
         <option value="admin" <?php echo $type==='admin'?'selected':''; ?>>المدراء</option>
+    </select>
+    <select name="gender" class="form-select">
+        <option value="all" <?php echo $gender==='all'?'selected':''; ?>>كل الجنسين</option>
+        <option value="male"   <?php echo $gender==='male'?'selected':''; ?>>👨 ذكر</option>
+        <option value="female" <?php echo $gender==='female'?'selected':''; ?>>👩 أنثى</option>
     </select>
     <button type="submit" class="btn btn-primary">بحث</button>
     <a href="users.php" class="btn btn-outline">إعادة تعيين</a>

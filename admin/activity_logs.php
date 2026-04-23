@@ -12,23 +12,73 @@ $limit  = 50;
 $offset = ($page - 1) * $limit;
 
 $filters = [
-    'action_type' => $_GET['action_type'] ?? '',
-    'user_id'     => $_GET['user_id'] ?? '',
-    'date_from'   => $_GET['date_from'] ?? '',
-    'date_to'     => $_GET['date_to'] ?? '',
+    'action_type' => trim($_GET['action_type'] ?? ''),
+    'user_id'     => trim($_GET['user_id'] ?? ''),
+    'date_from'   => trim($_GET['date_from'] ?? ''),
+    'date_to'     => trim($_GET['date_to'] ?? ''),
 ];
+$active_filters = array_filter($filters);
 
-$logs  = get_activity_logs($pdo, $limit, $offset, array_filter($filters));
-$total = $pdo->query("SELECT COUNT(*) FROM activity_logs")->fetchColumn();
-$total_pages = ceil($total / $limit);
+// Build WHERE clause shared by count and fetch queries
+$where  = '1=1';
+$params = [];
+if (!empty($active_filters['action_type'])) {
+    $where .= ' AND action_type = ?';
+    $params[] = $active_filters['action_type'];
+}
+if (!empty($active_filters['user_id'])) {
+    $where .= ' AND user_id = ?';
+    $params[] = (int)$active_filters['user_id'];
+}
+if (!empty($active_filters['date_from'])) {
+    $where .= ' AND created_at >= ?';
+    $params[] = $active_filters['date_from'] . ' 00:00:00';
+}
+if (!empty($active_filters['date_to'])) {
+    $where .= ' AND created_at <= ?';
+    $params[] = $active_filters['date_to'] . ' 23:59:59';
+}
 
-$action_types = $pdo->query("SELECT DISTINCT action_type FROM activity_logs ORDER BY action_type")->fetchAll(PDO::FETCH_COLUMN);
+// Filtered total (fixes wrong pagination when filtering)
+try {
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM activity_logs WHERE $where");
+    $count_stmt->execute($params);
+    $total = (int)$count_stmt->fetchColumn();
+} catch (Throwable $e) {
+    $total = 0;
+}
+$total_pages = $total > 0 ? (int)ceil($total / $limit) : 1;
+$page = min($page, $total_pages);
+
+// Fetch logs — inject LIMIT/OFFSET as integers directly to avoid PostgreSQL type error
+try {
+    $log_sql = "
+        SELECT al.*, u.full_name, u.email, u.user_type
+        FROM activity_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        WHERE $where
+        ORDER BY al.created_at DESC
+        LIMIT " . (int)$limit . " OFFSET " . (int)(($page - 1) * $limit);
+    $log_stmt = $pdo->prepare($log_sql);
+    $log_stmt->execute($params);
+    $logs = $log_stmt->fetchAll();
+} catch (Throwable $e) {
+    $logs = [];
+    $log_error = $e->getMessage();
+}
+
+try {
+    $action_types = $pdo->query("SELECT DISTINCT action_type FROM activity_logs ORDER BY action_type")->fetchAll(PDO::FETCH_COLUMN);
+} catch (Throwable $e) {
+    $action_types = [];
+}
 $active_page = 'logs';
 
 $action_labels = [
     'teacher_registration' => 'تسجيل معلم',
     'teacher_approved'     => 'موافقة على معلم',
     'teacher_rejected'     => 'رفض معلم',
+    'teacher_rated'        => 'تقييم معلم (مع تعليق)',
     'login'                => 'تسجيل دخول',
     'logout'               => 'تسجيل خروج',
 ];
@@ -87,6 +137,11 @@ $action_labels = [
 </form>
 
 <div class="section-card">
+    <?php if (isset($log_error)): ?>
+    <div class="alert alert-error" style="margin-bottom:1rem;background:#fee2e2;color:#991b1b;padding:1rem;border-radius:var(--radius-md)">
+        خطأ في قاعدة البيانات: <?php echo htmlspecialchars($log_error); ?>
+    </div>
+    <?php endif; ?>
     <?php if (count($logs) > 0): ?>
     <div style="overflow-x:auto">
     <table class="logs-table">
@@ -112,10 +167,15 @@ $action_labels = [
     </table>
     </div>
     <?php if ($total_pages > 1): ?>
+    <?php
+    // Build query string preserving filters
+    $pag_params = array_filter($filters);
+    $pag_qs = $pag_params ? '&' . http_build_query($pag_params) : '';
+    ?>
     <div class="pagination">
-        <?php if ($page > 1): ?><a href="?page=<?php echo $page-1; ?>" class="pag-btn">← السابق</a><?php endif; ?>
-        <?php for ($i=1;$i<=$total_pages;$i++): ?><a href="?page=<?php echo $i; ?>" class="pag-btn <?php echo $i===$page?'active':''; ?>"><?php echo $i; ?></a><?php endfor; ?>
-        <?php if ($page < $total_pages): ?><a href="?page=<?php echo $page+1; ?>" class="pag-btn">التالي →</a><?php endif; ?>
+        <?php if ($page > 1): ?><a href="?page=<?php echo $page-1; ?><?php echo $pag_qs; ?>" class="pag-btn">← السابق</a><?php endif; ?>
+        <?php for ($i=1;$i<=$total_pages;$i++): ?><a href="?page=<?php echo $i; ?><?php echo $pag_qs; ?>" class="pag-btn <?php echo $i===$page?'active':''; ?>"><?php echo $i; ?></a><?php endfor; ?>
+        <?php if ($page < $total_pages): ?><a href="?page=<?php echo $page+1; ?><?php echo $pag_qs; ?>" class="pag-btn">التالي →</a><?php endif; ?>
     </div>
     <?php endif; ?>
     <?php else: ?>
