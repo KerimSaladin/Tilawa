@@ -1,0 +1,1958 @@
+From fb28c79bf5ff00773391f5ad69c1849d565dd38c Mon Sep 17 00:00:00 2001
+From: Tilawa Deploy <deploy@tilawa.app>
+Date: Thu, 23 Apr 2026 01:33:41 +0000
+Subject: [PATCH] fix: resolve 500 errors on live_session, groups, messages
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- messages.php: rewrite conversations query using subquery to avoid
+  PostgreSQL error (column alias 'other_id' not allowed in correlated
+  subqueries in same SELECT level)
+- api/messages.php: is_read=1/0 → is_read=TRUE/FALSE
+- groups.php: remove MySQL backtick quoting around 'groups' table name
+- Remove 8 wrongly-placed root-level duplicate files (auth.php,
+  functions.php, payment.php, rate_teacher.php, submit_correction.php,
+  manage_group.php, users.php, subscriptions.php) — correct versions
+  already exist in api/ and admin/ and includes/
+---
+ api/messages.php      |   4 +-
+ auth.php              | 242 -------------
+ functions.php         | 824 ------------------------------------------
+ groups.php            |   4 +-
+ manage_group.php      | 168 ---------
+ messages.php          |  39 +-
+ payment.php           |  69 ----
+ rate_teacher.php      |  49 ---
+ submit_correction.php |  76 ----
+ subscriptions.php     | 163 ---------
+ users.php             | 184 ----------
+ 11 files changed, 28 insertions(+), 1794 deletions(-)
+ delete mode 100644 auth.php
+ delete mode 100644 functions.php
+ delete mode 100644 manage_group.php
+ delete mode 100644 payment.php
+ delete mode 100644 rate_teacher.php
+ delete mode 100644 submit_correction.php
+ delete mode 100644 subscriptions.php
+ delete mode 100644 users.php
+
+diff --git a/api/messages.php b/api/messages.php
+index 6babba2..b241d73 100644
+--- a/api/messages.php
++++ b/api/messages.php
+@@ -38,12 +38,12 @@ if ($action === 'send') {
+     $msgs = $stmt->fetchAll();
+     // تحديد كمقروء
+     if ($msgs) {
+-        $pdo->prepare("UPDATE messages SET is_read=1 WHERE sender_id=? AND receiver_id=? AND is_read=0")->execute([$with, $user['id']]);
++        $pdo->prepare("UPDATE messages SET is_read=TRUE WHERE sender_id=? AND receiver_id=? AND is_read=FALSE")->execute([$with, $user['id']]);
+     }
+     echo json_encode(['success'=>true,'messages'=>$msgs]);
+ 
+ } elseif ($action === 'unread_count') {
+-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND is_read=0");
++    $stmt = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND is_read=FALSE");
+     $stmt->execute([$user['id']]);
+     echo json_encode(['success'=>true,'count'=>(int)$stmt->fetchColumn()]);
+ 
+diff --git a/auth.php b/auth.php
+deleted file mode 100644
+index 3eea3f5..0000000
+--- a/auth.php
++++ /dev/null
+@@ -1,242 +0,0 @@
+-<?php
+-require_once __DIR__ . '/config.php';
+-require_once __DIR__ . '/functions.php';
+-
+-/**
+- * Login user
+- */
+-function login_user($pdo, $email, $password) {
+-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_active = TRUE");
+-    $stmt->execute([$email]);
+-    $user = $stmt->fetch();
+-    
+-    if ($user && password_verify($password, $user['password_hash'])) {
+-        $_SESSION['user_id'] = $user['id'];
+-        $_SESSION['user_type'] = $user['user_type'];
+-        $_SESSION['user_name'] = $user['full_name'];
+-        
+-        // Create session token
+-        $token = generate_token();
+-        $expires = date('Y-m-d H:i:s', strtotime('+7 days'));
+-        $stmt = $pdo->prepare("INSERT INTO sessions (user_id, session_token, expires_at) VALUES (?, ?, ?)");
+-        $stmt->execute([$user['id'], $token, $expires]);
+-        
+-        return ['success' => true, 'user' => $user];
+-    }
+-    
+-    return ['success' => false, 'message' => 'البريد الإلكتروني أو كلمة المرور غير صحيحة'];
+-}
+-
+-/**
+- * Register new user
+- */
+-function register_user($pdo, $data) {
+-    // Validate input
+-    if (empty($data['email']) || empty($data['password']) || empty($data['full_name'])) {
+-        return ['success' => false, 'message' => 'جميع الحقول مطلوبة'];
+-    }
+-    
+-    if (!is_valid_email($data['email'])) {
+-        return ['success' => false, 'message' => 'البريد الإلكتروني غير صحيح'];
+-    }
+-    
+-    if (strlen($data['password']) < 6) {
+-        return ['success' => false, 'message' => 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'];
+-    }
+-    
+-    if ($data['password'] !== $data['confirm_password']) {
+-        return ['success' => false, 'message' => 'كلمات المرور غير متطابقة'];
+-    }
+-    
+-    // Check if email exists
+-    $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+-    $stmt->execute([$data['email']]);
+-    if ($stmt->fetch()) {
+-        return ['success' => false, 'message' => 'البريد الإلكتروني مستخدم بالفعل'];
+-    }
+-    
+-    // Validate gender
+-    if (empty($data['gender']) || !in_array($data['gender'], ['male', 'female'])) {
+-        return ['success' => false, 'message' => 'يجب اختيار الجنس'];
+-    }
+-    
+-    // Validate certificate for teachers
+-    $user_type = in_array($data['user_type'], ['teacher', 'student']) ? $data['user_type'] : 'student';
+-    $certificate_path = null;
+-    $exam_required = false;
+-    
+-    if ($user_type === 'teacher') {
+-        // Check if certificate is uploaded
+-        $has_certificate = !empty($data['quran_certificate']) && isset($data['quran_certificate']['error']) && $data['quran_certificate']['error'] === UPLOAD_ERR_OK;
+-        
+-        if ($has_certificate) {
+-            // Validate certificate file
+-            require_once __DIR__ . '/functions.php';
+-            
+-            if (!is_valid_certificate_file($data['quran_certificate'])) {
+-                return ['success' => false, 'message' => 'صيغة الملف غير مدعومة. يُسمح فقط بملفات الصور (JPG, PNG, GIF) أو PDF'];
+-            }
+-            
+-            if ($data['quran_certificate']['size'] > MAX_FILE_SIZE) {
+-                return ['success' => false, 'message' => 'حجم الملف كبير جداً'];
+-            }
+-        } else {
+-            // No certificate uploaded - teacher must pass exam
+-            $exam_required = true;
+-        }
+-    }
+-    
+-    // Create user first to get user_id
+-    $password_hash = password_hash($data['password'], PASSWORD_BCRYPT);
+-    
+-    // Set trial end date (30 days from now)
+-    $trial_end_date = date('Y-m-d', strtotime('+30 days'));
+-    
+-    // Set teacher status to pending for teachers
+-    $teacher_status = ($user_type === 'teacher') ? 'pending' : null;
+-
+-    // Simulate Payment Token Generation (Pre-authorization)
+-    $payment_token = 'tok_' . bin2hex(random_bytes(10));
+-    
+-    $cols = ['email','password_hash','full_name','user_type','teacher_status','exam_required','gender','phone','quran_certificate','trial_end_date','payment_method_token'];
+-    $place = array_fill(0, count($cols), '?');
+-    $params = [
+-        $data['email'],
+-        $password_hash,
+-        $data['full_name'],
+-        $user_type,
+-        $teacher_status,
+-        $exam_required ? true : false,
+-        $data['gender'],
+-        $data['phone'] ?? null,
+-        null,
+-        $trial_end_date,
+-        $payment_token
+-    ];
+-    $sql = "INSERT INTO users (" . implode(',', $cols) . ") VALUES (" . implode(',', $place) . ") RETURNING id";
+-    $stmt = $pdo->prepare($sql);
+-    
+-    try {
+-        $stmt->execute($params);
+-        $user_id = $stmt->fetchColumn();
+-        
+-        // Upload certificate if teacher and certificate provided
+-        if ($user_type === 'teacher' && $has_certificate) {
+-            require_once __DIR__ . '/storage.php';
+-            $upload_result = upload_file($data['quran_certificate'], 'certificate', $user_id);
+-
+-            if (!$upload_result['success']) {
+-                $delete_stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+-                $delete_stmt->execute([$user_id]);
+-                return ['success' => false, 'message' => $upload_result['message']];
+-            }
+-
+-            $certificate_path = USE_R2 ? $upload_result['url'] : $upload_result['path'];
+-
+-            $update_stmt = $pdo->prepare("UPDATE users SET quran_certificate = ? WHERE id = ?");
+-            $update_stmt->execute([$certificate_path, $user_id]);
+-
+-            $file_extension = strtolower(pathinfo($upload_result['path'], PATHINFO_EXTENSION));
+-            $file_type = in_array($file_extension, ['pdf']) ? 'application/pdf' : 'image/' . $file_extension;
+-            $pdo->prepare("INSERT INTO teacher_files (teacher_id,file_name,file_path,file_type,description) VALUES (?,?,?,?,?)")
+-                ->execute([$user_id, basename($certificate_path), $certificate_path, $file_type, 'شهادة القرآن الكريم']);
+-        }
+-        
+-        // Log teacher registration
+-        require_once __DIR__ . '/functions.php';
+-        $log_message = $exam_required 
+-            ? 'تسجيل معلم جديد - يحتاج اجتياز امتحان' 
+-            : 'تسجيل معلم جديد - مع شهادة';
+-        log_activity($pdo, $user_id, 'teacher_registration', $log_message, 'user', $user_id);
+-        
+-        // Auto login
+-        $_SESSION['user_id'] = $user_id;
+-        $_SESSION['user_type'] = $user_type;
+-        $_SESSION['user_name'] = $data['full_name'];
+-        
+-        return ['success' => true, 'user_id' => $user_id];
+-    } catch (PDOException $e) {
+-        // Delete uploaded certificate if user creation failed
+-        if ($certificate_path && file_exists(UPLOAD_DIR . $certificate_path)) {
+-            @unlink(UPLOAD_DIR . $certificate_path);
+-        }
+-        return ['success' => false, 'message' => 'حدث خطأ أثناء التسجيل: ' . $e->getMessage()];
+-    }
+-}
+-
+-/**
+- * Logout user
+- */
+-function logout_user($pdo) {
+-    if (isset($_SESSION['user_id'])) {
+-        // Delete session token
+-        if (isset($_SESSION['session_token'])) {
+-            $stmt = $pdo->prepare("DELETE FROM sessions WHERE session_token = ?");
+-            $stmt->execute([$_SESSION['session_token']]);
+-        }
+-    }
+-    
+-    session_unset();
+-    session_destroy();
+-    
+-    // Start new session for logout message
+-    if (session_status() === PHP_SESSION_NONE) {
+-        session_start();
+-    }
+-}
+-
+-/**
+- * Require login
+- */
+-function require_login() {
+-    if (!is_logged_in()) {
+-        redirect('login.php');
+-    }
+-}
+-
+-/**
+- * Require specific role
+- */
+-function require_role($role) {
+-    require_login();
+-    $user = get_logged_in_user($GLOBALS['pdo']);
+-    if (!has_role($user, $role)) {
+-        redirect('dashboard.php');
+-    }
+-}
+-
+-/**
+- * Check if user has active subscription
+- */
+-function has_active_subscription($pdo, $user_id) {
+-    $stmt = $pdo->prepare("SELECT has_star, user_type FROM users WHERE id = ?");
+-    $stmt->execute([$user_id]);
+-    $user = $stmt->fetch();
+-
+-    if (!$user) return false;
+-
+-    // Teachers always have free access
+-    if ($user['user_type'] === 'teacher') return true;
+-
+-    // Star users bypass all payment requirements
+-    if ($user['has_star']) return true;
+-
+-    $subscription = get_subscription_status($pdo, $user_id);
+-    return $subscription !== false;
+-}
+-
+-// Handle logout request
+-if (isset($_GET['logout'])) {
+-    logout_user($pdo);
+-    $_SESSION['logout_message'] = 'تم تسجيل الخروج بنجاح';
+-    
+-    // Determine correct path to login.php based on current location
+-    $script_path = $_SERVER['SCRIPT_NAME'];
+-    if (strpos($script_path, '/includes/') !== false || strpos($script_path, '\\includes\\') !== false) {
+-        // If we're in includes directory, go up one level
+-        redirect('../login.php');
+-    } else {
+-        // If we're in root, use direct path
+-        redirect('login.php');
+-    }
+-}
+diff --git a/functions.php b/functions.php
+deleted file mode 100644
+index 247b029..0000000
+--- a/functions.php
++++ /dev/null
+@@ -1,824 +0,0 @@
+-<?php
+-// Helper functions
+-
+-/**
+- * Sanitize input data
+- */
+-function sanitize_input($data) {
+-    $data = trim($data);
+-    $data = stripslashes($data);
+-    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+-    return $data;
+-}
+-
+-/**
+- * Check if user is logged in
+- */
+-function is_logged_in() {
+-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+-}
+-
+-/**
+- * Get current logged in user data
+- */
+-function get_logged_in_user($pdo) {
+-    if (!is_logged_in()) {
+-        return null;
+-    }
+-    
+-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND is_active = TRUE");
+-    $stmt->execute([$_SESSION['user_id']]);
+-    return $stmt->fetch();
+-}
+-
+-/**
+- * Check if user has specific role
+- */
+-function has_role($user, $role) {
+-    return $user && $user['user_type'] === $role;
+-}
+-
+-/**
+- * Redirect to a page
+- */
+-function redirect($url) {
+-    header("Location: " . $url);
+-    exit();
+-}
+-
+-/**
+- * Format date in Arabic-friendly format
+- */
+-function format_date($date) {
+-    return date('Y-m-d H:i', strtotime($date));
+-}
+-
+-/**
+- * Get Arabic month name
+- */
+-function get_arabic_month($month) {
+-    $months = [
+-        1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+-        5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+-        9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
+-    ];
+-    return $months[(int)$month] ?? $month;
+-}
+-
+-/**
+- * Validate email
+- */
+-function is_valid_email($email) {
+-    return filter_var($email, FILTER_VALIDATE_EMAIL);
+-}
+-
+-/**
+- * Generate random token
+- */
+-function generate_token($length = 32) {
+-    return bin2hex(random_bytes($length));
+-}
+-
+-/**
+- * Get subscription status
+- */
+-function get_subscription_status($pdo, $user_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT us.*, s.name_ar, s.name 
+-        FROM user_subscriptions us
+-        JOIN subscriptions s ON us.subscription_id = s.id
+-        WHERE us.user_id = ? AND us.status = 'active' AND us.end_date >= CURRENT_DATE
+-        ORDER BY us.end_date DESC
+-        LIMIT 1
+-    ");
+-    $stmt->execute([$user_id]);
+-    return $stmt->fetch();
+-}
+-
+-/**
+- * Check if user is in trial period
+- */
+-function is_trial_active($pdo, $user_id) {
+-    $stmt = $pdo->prepare("SELECT trial_end_date FROM users WHERE id = ?");
+-    $stmt->execute([$user_id]);
+-    $user = $stmt->fetch();
+-    
+-    if (!$user || !$user['trial_end_date']) {
+-        return false;
+-    }
+-    
+-    $trial_end = strtotime($user['trial_end_date']);
+-    $today = strtotime(date('Y-m-d'));
+-    
+-    return $trial_end >= $today;
+-}
+-
+-/**
+- * Check if user has active subscription or trial
+- */
+-function has_active_access($pdo, $user_id) {
+-    // الاشتراك اختياري — يمنح خصم 15% فقط
+-    // جميع المستخدمين المسجلين لديهم وصول كامل
+-    $stmt = $pdo->prepare("SELECT user_type FROM users WHERE id = ? AND is_active = TRUE");
+-    $stmt->execute([$user_id]);
+-    $user = $stmt->fetch();
+-    return (bool)$user; // أي مستخدم نشط لديه وصول
+-}
+-
+-/**
+- * التحقق من وجود اشتراك نشط — للحصول على خصم 15% فقط
+- */
+-function has_subscription_discount($pdo, $user_id) {
+-    $stmt = $pdo->prepare("SELECT has_star FROM users WHERE id=?");
+-    $stmt->execute([$user_id]);
+-    $u = $stmt->fetch();
+-    if ($u && $u['has_star']) return true;
+-    $sub = get_subscription_status($pdo, $user_id);
+-    return (bool)$sub;
+-}
+-
+-/**
+- * Get trial days remaining
+- */
+-function get_trial_days_remaining($pdo, $user_id) {
+-    $stmt = $pdo->prepare("SELECT trial_end_date FROM users WHERE id = ?");
+-    $stmt->execute([$user_id]);
+-    $user = $stmt->fetch();
+-    
+-    if (!$user || !$user['trial_end_date']) {
+-        return 0;
+-    }
+-    
+-    $trial_end = strtotime($user['trial_end_date']);
+-    $today = strtotime(date('Y-m-d'));
+-    $days_remaining = floor(($trial_end - $today) / (60 * 60 * 24));
+-    
+-    return max(0, $days_remaining);
+-}
+-
+-/**
+- * Check if audio file is valid
+- */
+-function is_valid_audio_file($file) {
+-    $allowed_types = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm'];
+-    $allowed_extensions = ['mp3', 'wav', 'ogg', 'webm'];
+-    
+-    $file_type = $file['type'];
+-    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    
+-    return in_array($file_type, $allowed_types) && in_array($file_extension, $allowed_extensions);
+-}
+-
+-/**
+- * Upload audio file
+- */
+-function upload_audio_file($file, $user_id) {
+-    if (!is_valid_audio_file($file)) {
+-        return ['success' => false, 'message' => 'صيغة الملف غير مدعومة'];
+-    }
+-    
+-    if ($file['size'] > 100 * 1024 * 1024) {
+-        return ['success' => false, 'message' => 'حجم الملف كبير جداً (الحد الأقصى 100MB)'];
+-    }
+-    
+-    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    $filename = 'recitation_' . $user_id . '_' . time() . '_' . uniqid() . '.' . $extension;
+-    $filepath = UPLOAD_DIR . $filename;
+-    
+-    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+-        return ['success' => true, 'filename' => $filename, 'filepath' => $filepath];
+-    }
+-    
+-    return ['success' => false, 'message' => 'فشل رفع الملف'];
+-}
+-
+-/**
+- * Check if certificate file is valid
+- */
+-function is_valid_certificate_file($file) {
+-    $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+-    $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
+-    
+-    $file_type = $file['type'];
+-    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    
+-    return in_array($file_type, $allowed_types) && in_array($file_extension, $allowed_extensions);
+-}
+-
+-/**
+- * Upload certificate file
+- */
+-function upload_certificate_file($file, $user_id) {
+-    if (!is_valid_certificate_file($file)) {
+-        return ['success' => false, 'message' => 'صيغة الملف غير مدعومة. يُسمح فقط بملفات الصور (JPG, PNG, GIF) أو PDF'];
+-    }
+-    
+-    if ($file['size'] > 100 * 1024 * 1024) {
+-        return ['success' => false, 'message' => 'حجم الملف كبير جداً (الحد الأقصى 100MB)'];
+-    }
+-    
+-    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    $filename = 'certificate_' . $user_id . '_' . time() . '_' . uniqid() . '.' . $extension;
+-    $filepath = UPLOAD_DIR . $filename;
+-    
+-    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+-        return ['success' => true, 'filename' => $filename, 'filepath' => $filepath];
+-    }
+-    
+-    return ['success' => false, 'message' => 'فشل رفع الملف'];
+-}
+-
+-/**
+- * Check if video file is valid
+- */
+-function is_valid_video_file($file) {
+-    $allowed_types = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
+-    $allowed_extensions = ['mp4', 'webm', 'ogg', 'mov', 'avi'];
+-    
+-    $file_type = $file['type'];
+-    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    
+-    return in_array($file_type, $allowed_types) && in_array($file_extension, $allowed_extensions);
+-}
+-
+-/**
+- * Upload video file
+- */
+-function upload_video_file($file, $user_id) {
+-    if (!is_valid_video_file($file)) {
+-        return ['success' => false, 'message' => 'صيغة الملف غير مدعومة'];
+-    }
+-    
+-    if ($file['size'] > 100 * 1024 * 1024) {
+-        return ['success' => false, 'message' => 'حجم الملف كبير جداً (الحد الأقصى 100MB)'];
+-    }
+-    
+-    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+-    $filename = 'recitation_' . $user_id . '_' . time() . '_' . uniqid() . '.' . $extension;
+-    $filepath = UPLOAD_DIR . $filename;
+-    
+-    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+-        return ['success' => true, 'filename' => $filename, 'filepath' => $filepath];
+-    }
+-    
+-    return ['success' => false, 'message' => 'فشل رفع الملف'];
+-}
+-
+-/**
+- * Get Surah list (common Surahs)
+- */
+-function get_surah_list() {
+-    return [
+-        'الفاتحة' => 'الفاتحة',
+-        'البقرة' => 'البقرة',
+-        'آل عمران' => 'آل عمران',
+-        'النساء' => 'النساء',
+-        'المائدة' => 'المائدة',
+-        'الأنعام' => 'الأنعام',
+-        'الأعراف' => 'الأعراف',
+-        'الأنفال' => 'الأنفال',
+-        'التوبة' => 'التوبة',
+-        'يونس' => 'يونس',
+-        'هود' => 'هود',
+-        'يوسف' => 'يوسف',
+-        'الرعد' => 'الرعد',
+-        'إبراهيم' => 'إبراهيم',
+-        'الحجر' => 'الحجر',
+-        'النحل' => 'النحل',
+-        'الإسراء' => 'الإسراء',
+-        'الكهف' => 'الكهف',
+-        'مريم' => 'مريم',
+-        'طه' => 'طه',
+-        'الأنبياء' => 'الأنبياء',
+-        'الحج' => 'الحج',
+-        'المؤمنون' => 'المؤمنون',
+-        'النور' => 'النور',
+-        'الفرقان' => 'الفرقان',
+-        'يس' => 'يس',
+-        'الصافات' => 'الصافات',
+-        'ص' => 'ص',
+-        'الزمر' => 'الزمر',
+-        'غافر' => 'غافر',
+-        'فصلت' => 'فصلت',
+-        'الشورى' => 'الشورى',
+-        'الزخرف' => 'الزخرف',
+-        'الدخان' => 'الدخان',
+-        'الجاثية' => 'الجاثية',
+-        'الأحقاف' => 'الأحقاف',
+-        'محمد' => 'محمد',
+-        'الفتح' => 'الفتح',
+-        'الحجرات' => 'الحجرات',
+-        'ق' => 'ق',
+-        'الذاريات' => 'الذاريات',
+-        'الطور' => 'الطور',
+-        'النجم' => 'النجم',
+-        'القمر' => 'القمر',
+-        'الرحمن' => 'الرحمن',
+-        'الواقعة' => 'الواقعة',
+-        'الحديد' => 'الحديد',
+-        'المجادلة' => 'المجادلة',
+-        'الحشر' => 'الحشر',
+-        'الممتحنة' => 'الممتحنة',
+-        'الصف' => 'الصف',
+-        'الجمعة' => 'الجمعة',
+-        'المنافقون' => 'المنافقون',
+-        'التغابن' => 'التغابن',
+-        'الطلاق' => 'الطلاق',
+-        'التحريم' => 'التحريم',
+-        'الملك' => 'الملك',
+-        'القلم' => 'القلم',
+-        'الحاقة' => 'الحاقة',
+-        'المعارج' => 'المعارج',
+-        'نوح' => 'نوح',
+-        'الجن' => 'الجن',
+-        'المزمل' => 'المزمل',
+-        'المدثر' => 'المدثر',
+-        'القيامة' => 'القيامة',
+-        'الإنسان' => 'الإنسان',
+-        'المرسلات' => 'المرسلات',
+-        'النبأ' => 'النبأ',
+-        'النازعات' => 'النازعات',
+-        'عبس' => 'عبس',
+-        'التكوير' => 'التكوير',
+-        'الانفطار' => 'الانفطار',
+-        'المطففين' => 'المطففين',
+-        'الانشقاق' => 'الانشقاق',
+-        'البروج' => 'البروج',
+-        'الطارق' => 'الطارق',
+-        'الأعلى' => 'الأعلى',
+-        'الغاشية' => 'الغاشية',
+-        'الفجر' => 'الفجر',
+-        'البلد' => 'البلد',
+-        'الشمس' => 'الشمس',
+-        'الليل' => 'الليل',
+-        'الضحى' => 'الضحى',
+-        'الشرح' => 'الشرح',
+-        'التين' => 'التين',
+-        'العلق' => 'العلق',
+-        'القدر' => 'القدر',
+-        'البينة' => 'البينة',
+-        'الزلزلة' => 'الزلزلة',
+-        'العاديات' => 'العاديات',
+-        'القارعة' => 'القارعة',
+-        'التكاثر' => 'التكاثر',
+-        'العصر' => 'العصر',
+-        'الهمزة' => 'الهمزة',
+-        'الفيل' => 'الفيل',
+-        'قريش' => 'قريش',
+-        'الماعون' => 'الماعون',
+-        'الكوثر' => 'الكوثر',
+-        'الكافرون' => 'الكافرون',
+-        'النصر' => 'النصر',
+-        'المسد' => 'المسد',
+-        'الإخلاص' => 'الإخلاص',
+-        'الفلق' => 'الفلق',
+-        'الناس' => 'الناس'
+-    ];
+-}
+-
+-/**
+- * Log platform activity
+- */
+-function log_activity($pdo, $user_id, $action_type, $action_description, $resource_type = null, $resource_id = null) {
+-    try {
+-        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+-        $stmt = $pdo->prepare("
+-            INSERT INTO activity_logs (user_id, action_type, action_description, resource_type, resource_id, ip_address)
+-            VALUES (?, ?, ?, ?, ?, ?)
+-        ");
+-        $stmt->execute([
+-            $user_id,
+-            $action_type,
+-            $action_description,
+-            $resource_type,
+-            $resource_id,
+-            $ip_address
+-        ]);
+-    } catch (Exception $e) {
+-        // Silently fail logging to not break main functionality
+-        error_log('Failed to log activity: ' . $e->getMessage());
+-    }
+-}
+-
+-/**
+- * Check if teacher is approved and can work
+- */
+-function is_teacher_approved($pdo, $user_id) {
+-    $stmt = $pdo->prepare("SELECT teacher_status, exam_required, exam_passed FROM users WHERE id = ? AND user_type = 'teacher'");
+-    $stmt->execute([$user_id]);
+-    $teacher = $stmt->fetch();
+-    
+-    if (!$teacher) {
+-        return false;
+-    }
+-    
+-    // Teacher must be approved
+-    if ($teacher['teacher_status'] !== 'approved') {
+-        return false;
+-    }
+-    
+-    // If exam is required, it must be passed
+-    if ($teacher['exam_required'] && !$teacher['exam_passed']) {
+-        return false;
+-    }
+-    
+-    return true;
+-}
+-
+-/**
+- * Get activity logs
+- */
+-function get_activity_logs($pdo, $limit = 100, $offset = 0, $filters = []) {
+-    $where = "1=1";
+-    $params = [];
+-    
+-    if (!empty($filters['action_type'])) {
+-        $where .= " AND action_type = ?";
+-        $params[] = $filters['action_type'];
+-    }
+-    
+-    if (!empty($filters['user_id'])) {
+-        $where .= " AND user_id = ?";
+-        $params[] = $filters['user_id'];
+-    }
+-    
+-    if (!empty($filters['date_from'])) {
+-        $where .= " AND created_at >= ?";
+-        $params[] = $filters['date_from'];
+-    }
+-    
+-    if (!empty($filters['date_to'])) {
+-        $where .= " AND created_at <= ?";
+-        $params[] = $filters['date_to'];
+-    }
+-    
+-    $params[] = $limit;
+-    $params[] = $offset;
+-    
+-    $stmt = $pdo->prepare("
+-        SELECT al.*, u.full_name, u.email, u.user_type
+-        FROM activity_logs al
+-        LEFT JOIN users u ON al.user_id = u.id
+-        WHERE $where
+-        ORDER BY al.created_at DESC
+-        LIMIT ? OFFSET ?
+-    ");
+-    $stmt->execute($params);
+-    return $stmt->fetchAll();
+-}
+-
+-/**
+- * Get teacher files
+- */
+-function get_teacher_files($pdo, $teacher_id = null) {
+-    if ($teacher_id) {
+-        $stmt = $pdo->prepare("
+-            SELECT tf.*, u.full_name, u.email
+-            FROM teacher_files tf
+-            JOIN users u ON tf.teacher_id = u.id
+-            WHERE tf.teacher_id = ?
+-            ORDER BY tf.uploaded_at DESC
+-        ");
+-        $stmt->execute([$teacher_id]);
+-    } else {
+-        $stmt = $pdo->prepare("
+-            SELECT tf.*, u.full_name, u.email
+-            FROM teacher_files tf
+-            JOIN users u ON tf.teacher_id = u.id
+-            ORDER BY tf.uploaded_at DESC
+-        ");
+-        $stmt->execute();
+-    }
+-    return $stmt->fetchAll();
+-}
+-
+-function column_exists($pdo, $table, $column) {
+-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND column_name = ?");
+-    $stmt->execute([$table, $column]);
+-    return (int)$stmt->fetchColumn() > 0;
+-}
+-
+-/**
+- * Update teacher online status
+- */
+-function update_teacher_online_status($pdo, $teacher_id) {
+-    $stmt = $pdo->prepare("
+-        UPDATE users 
+-        SET is_online = TRUE, last_seen = CURRENT_TIMESTAMP 
+-        WHERE id = ? AND user_type = 'teacher'
+-    ");
+-    return $stmt->execute([$teacher_id]);
+-}
+-
+-/**
+- * Check if teacher is online
+- */
+-function is_teacher_online($pdo, $teacher_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT is_online, last_seen 
+-        FROM users 
+-        WHERE id = ? AND user_type = 'teacher'
+-    ");
+-    $stmt->execute([$teacher_id]);
+-    $teacher = $stmt->fetch();
+-    
+-    if (!$teacher) {
+-        return false;
+-    }
+-    
+-    // Check if last_seen is within the last 2 minutes
+-    if ($teacher['last_seen']) {
+-        $last_seen = strtotime($teacher['last_seen']);
+-        $two_minutes_ago = time() - 120; // 2 minutes ago
+-        return $last_seen >= $two_minutes_ago;
+-    }
+-    
+-    return $teacher['is_online'] == true;
+-}
+-
+-/**
+- * Mark teacher as offline
+- */
+-function mark_teacher_offline($pdo, $teacher_id) {
+-    $stmt = $pdo->prepare("
+-        UPDATE users 
+-        SET is_online = FALSE 
+-        WHERE id = ? AND user_type = 'teacher'
+-    ");
+-    return $stmt->execute([$teacher_id]);
+-}
+-
+-/**
+- * Clean up offline teachers (mark as offline if last_seen > 2 minutes)
+- */
+-function cleanup_offline_teachers($pdo) {
+-    $stmt = $pdo->prepare("
+-        UPDATE users 
+-        SET is_online = FALSE 
+-        WHERE user_type = 'teacher' 
+-        AND is_online = TRUE 
+-        AND last_seen < NOW() - INTERVAL '2 minutes'
+-    ");
+-    return $stmt->execute();
+-}
+-
+-/**
+- * Add or update teacher rating
+- */
+-function add_teacher_rating($pdo, $student_id, $teacher_id, $rating, $comment = null) {
+-    // Validate rating
+-    if ($rating < 1 || $rating > 5) {
+-        return ['success' => false, 'message' => 'التقييم يجب أن يكون بين 1 و 5'];
+-    }
+-    
+-    // Check if student has had at least one session with this teacher
+-    $stmt = $pdo->prepare("
+-        SELECT COUNT(*) as session_count 
+-        FROM recitations 
+-        WHERE student_id = ? AND teacher_id = ? AND status IN ('reviewed', 'approved')
+-    ");
+-    $stmt->execute([$student_id, $teacher_id]);
+-    $session_count = $stmt->fetch()['session_count'];
+-    
+-    if ($session_count == 0) {
+-        return ['success' => false, 'message' => 'يمكن فقط تقييم المعلمين الذين أتممت معهم جلسة واحدة على الأقل'];
+-    }
+-    
+-    // Check if rating already exists and update or insert
+-    $stmt = $pdo->prepare("
+-        SELECT id FROM ratings 
+-        WHERE student_id = ? AND teacher_id = ?
+-    ");
+-    $stmt->execute([$student_id, $teacher_id]);
+-    $existing = $stmt->fetch();
+-    
+-    if ($existing) {
+-        // Update existing rating
+-        $stmt = $pdo->prepare("
+-            UPDATE ratings 
+-            SET rating = ?, comment = ?, created_at = CURRENT_TIMESTAMP 
+-            WHERE student_id = ? AND teacher_id = ?
+-        ");
+-        $success = $stmt->execute([$rating, $comment, $student_id, $teacher_id]);
+-        $action = 'updated';
+-    } else {
+-        // Insert new rating
+-        $stmt = $pdo->prepare("
+-            INSERT INTO ratings (student_id, teacher_id, rating, comment) 
+-            VALUES (?, ?, ?, ?)
+-        ");
+-        $success = $stmt->execute([$student_id, $teacher_id, $rating, $comment]);
+-        $action = 'added';
+-    }
+-    
+-    if ($success) {
+-        return ['success' => true, 'message' => "تم $action التقييم بنجاح"];
+-    } else {
+-        return ['success' => false, 'message' => 'فشل حفظ التقييم'];
+-    }
+-}
+-
+-/**
+- * Get teacher average rating
+- */
+-function get_teacher_average_rating($pdo, $teacher_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings 
+-        FROM ratings 
+-        WHERE teacher_id = ?
+-    ");
+-    $stmt->execute([$teacher_id]);
+-    $result = $stmt->fetch();
+-    
+-    if (!$result || !$result['total_ratings']) {
+-        return ['avg_rating' => 0, 'total_ratings' => 0];
+-    }
+-    
+-    return [
+-        'avg_rating' => round($result['avg_rating'], 1),
+-        'total_ratings' => $result['total_ratings']
+-    ];
+-}
+-
+-/**
+- * Get student's rating for a specific teacher
+- */
+-function get_student_teacher_rating($pdo, $student_id, $teacher_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT rating, comment, created_at 
+-        FROM ratings 
+-        WHERE student_id = ? AND teacher_id = ?
+-    ");
+-    $stmt->execute([$student_id, $teacher_id]);
+-    return $stmt->fetch();
+-}
+-
+-/**
+- * Get all ratings for a teacher
+- */
+-function get_teacher_ratings($pdo, $teacher_id, $limit = 20, $offset = 0) {
+-    $stmt = $pdo->prepare("
+-        SELECT r.*, u.full_name as student_name 
+-        FROM ratings r
+-        JOIN users u ON r.student_id = u.id
+-        WHERE r.teacher_id = ?
+-        ORDER BY r.created_at DESC
+-        LIMIT ? OFFSET ?
+-    ");
+-    $stmt->execute([$teacher_id, $limit, $offset]);
+-    return $stmt->fetchAll();
+-}
+-
+-/**
+- * Check if student can rate teacher
+- */
+-function can_student_rate_teacher($pdo, $student_id, $teacher_id) {
+-    // Check if student has had completed sessions with teacher
+-    $stmt = $pdo->prepare("
+-        SELECT COUNT(*) as session_count 
+-        FROM recitations 
+-        WHERE student_id = ? AND teacher_id = ? AND status IN ('reviewed', 'approved')
+-    ");
+-    $stmt->execute([$student_id, $teacher_id]);
+-    $session_count = $stmt->fetch()['session_count'];
+-    
+-    return $session_count > 0;
+-}
+-
+-/**
+- * Create group session
+- */
+-function create_group_session($pdo, $teacher_id, $title, $description, $scheduled_at, $duration_minutes = 60, $max_students = 50, $session_url = null) {
+-    $stmt = $pdo->prepare("
+-        INSERT INTO group_sessions (teacher_id, title, description, scheduled_at, duration_minutes, max_students, session_url) 
+-        VALUES (?, ?, ?, ?, ?, ?, ?)
+-    ");
+-    return $stmt->execute([$teacher_id, $title, $description, $scheduled_at, $duration_minutes, $max_students, $session_url]);
+-}
+-
+-/**
+- * Get teacher's group sessions
+- */
+-function get_teacher_group_sessions($pdo, $teacher_id, $limit = 20, $offset = 0) {
+-    $stmt = $pdo->prepare("
+-        SELECT gs.*, 
+-               (SELECT COUNT(*) FROM group_session_participants gsp WHERE gsp.session_id = gs.id) as registered_count
+-        FROM group_sessions gs
+-        WHERE gs.teacher_id = ?
+-        ORDER BY gs.scheduled_at DESC
+-        LIMIT ? OFFSET ?
+-    ");
+-    $stmt->execute([$teacher_id, $limit, $offset]);
+-    return $stmt->fetchAll();
+-}
+-
+-/**
+- * Get all available group sessions for students
+- */
+-function get_available_group_sessions($pdo, $limit = 20, $offset = 0) {
+-    $stmt = $pdo->prepare("
+-        SELECT gs.*, u.full_name as teacher_name,
+-               (SELECT COUNT(*) FROM group_session_participants gsp WHERE gsp.session_id = gs.id) as registered_count
+-        FROM group_sessions gs
+-        JOIN users u ON gs.teacher_id = u.id
+-        WHERE gs.status IN ('scheduled', 'live')
+-        AND gs.scheduled_at >= NOW() - INTERVAL '2 hours'
+-        ORDER BY gs.scheduled_at ASC
+-        LIMIT ? OFFSET ?
+-    ");
+-    $stmt->execute([$limit, $offset]);
+-    return $stmt->fetchAll();
+-}
+-
+-/**
+- * Register student for group session
+- */
+-function register_student_for_session($pdo, $student_id, $session_id) {
+-    // Check if session exists and is available
+-    $stmt = $pdo->prepare("
+-        SELECT gs.*, 
+-               (SELECT COUNT(*) FROM group_session_participants gsp WHERE gsp.session_id = gs.id) as registered_count
+-        FROM group_sessions gs
+-        WHERE gs.id = ? AND gs.status = 'scheduled'
+-    ");
+-    $stmt->execute([$session_id]);
+-    $session = $stmt->fetch();
+-    
+-    if (!$session) {
+-        return ['success' => false, 'message' => 'الجلسة غير متاحة للتسجيل'];
+-    }
+-    
+-    if ($session['registered_count'] >= $session['max_students']) {
+-        return ['success' => false, 'message' => 'الجلسة ممتلئة'];
+-    }
+-    
+-    // Check if student is already registered
+-    $stmt = $pdo->prepare("
+-        SELECT COUNT(*) as count 
+-        FROM group_session_participants 
+-        WHERE student_id = ? AND session_id = ?
+-    ");
+-    $stmt->execute([$student_id, $session_id]);
+-    $already_registered = $stmt->fetch()['count'] > 0;
+-    
+-    if ($already_registered) {
+-        return ['success' => false, 'message' => 'أنت مسجل بالفعل في هذه الجلسة'];
+-    }
+-    
+-    // Register student
+-    $stmt = $pdo->prepare("
+-        INSERT INTO group_session_participants (session_id, student_id) 
+-        VALUES (?, ?)
+-    ");
+-    $success = $stmt->execute([$session_id, $student_id]);
+-    
+-    if ($success) {
+-        return ['success' => true, 'message' => 'تم التسجيل في الجلسة بنجاح'];
+-    } else {
+-        return ['success' => false, 'message' => 'فشل التسجيل في الجلسة'];
+-    }
+-}
+-
+-/**
+- * Check if student is registered for session
+- */
+-function is_student_registered_for_session($pdo, $student_id, $session_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT COUNT(*) as count 
+-        FROM group_session_participants 
+-        WHERE student_id = ? AND session_id = ?
+-    ");
+-    $stmt->execute([$student_id, $session_id]);
+-    return $stmt->fetch()['count'] > 0;
+-}
+-
+-/**
+- * Update group session status
+- */
+-function update_group_session_status($pdo, $session_id, $status) {
+-    if (!in_array($status, ['scheduled', 'live', 'ended'])) {
+-        return false;
+-    }
+-    
+-    $stmt = $pdo->prepare("
+-        UPDATE group_sessions 
+-        SET status = ? 
+-        WHERE id = ?
+-    ");
+-    return $stmt->execute([$status, $session_id]);
+-}
+-
+-/**
+- * Get session participants
+- */
+-function get_session_participants($pdo, $session_id) {
+-    $stmt = $pdo->prepare("
+-        SELECT gsp.*, u.full_name, u.email
+-        FROM group_session_participants gsp
+-        JOIN users u ON gsp.student_id = u.id
+-        WHERE gsp.session_id = ?
+-        ORDER BY gsp.joined_at ASC
+-    ");
+-    $stmt->execute([$session_id]);
+-    return $stmt->fetchAll();
+-}
+diff --git a/groups.php b/groups.php
+index cc2e1cb..8fe8157 100644
+--- a/groups.php
++++ b/groups.php
+@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
+         $error = 'اسم المجموعة مطلوب';
+     } else {
+         try {
+-            $stmt = $pdo->prepare("INSERT INTO `groups` (teacher_id, group_name, description) VALUES (?, ?, ?)");
++            $stmt = $pdo->prepare("INSERT INTO groups (teacher_id, group_name, description) VALUES (?, ?, ?)");
+             $stmt->execute([$user['id'], $group_name, $description]);
+             $success = 'تم إنشاء المجموعة بنجاح';
+         } catch (PDOException $e) {
+@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
+ }
+ 
+ // Get all groups for this teacher
+-$stmt = $pdo->prepare("SELECT id, teacher_id, group_name as name, description, gender, created_at FROM `groups` WHERE teacher_id = ? ORDER BY created_at DESC");
++$stmt = $pdo->prepare("SELECT id, teacher_id, group_name as name, description, gender, created_at FROM groups WHERE teacher_id = ? ORDER BY created_at DESC");
+ $stmt->execute([$user['id']]);
+ $groups = $stmt->fetchAll();
+ 
+diff --git a/manage_group.php b/manage_group.php
+deleted file mode 100644
+index a324a88..0000000
+--- a/manage_group.php
++++ /dev/null
+@@ -1,168 +0,0 @@
+-<?php
+-ob_start();
+-error_reporting(0);
+-ini_set('display_errors', 0);
+-ob_start();
+-require_once '../includes/config.php';
+-require_once '../includes/auth.php';
+-
+-if (!is_logged_in()) {
+-    header('Content-Type: application/json');
+-    echo json_encode(['success' => false, 'message' => 'يجب تسجيل الدخول']);
+-    exit;
+-}
+-
+-$user = get_logged_in_user($pdo);
+-
+-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+-    header('Content-Type: application/json');
+-    echo json_encode(['success' => false, 'message' => 'طريقة الطلب غير صحيحة']);
+-    exit;
+-}
+-
+-$action = $_POST['action'] ?? '';
+-
+-try {
+-    if ($action === 'add_student') {
+-        // Only teachers can add students
+-        if ($user['user_type'] !== 'teacher') {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'غير مصرح']);
+-            exit;
+-        }
+-        
+-        $group_id = (int)($_POST['group_id'] ?? 0);
+-        $student_id = (int)($_POST['student_id'] ?? 0);
+-        
+-        if (!$group_id || !$student_id) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'بيانات غير كاملة']);
+-            exit;
+-        }
+-        
+-        // Verify group belongs to teacher
+-        $stmt = $pdo->prepare("SELECT id FROM groups WHERE id = ? AND teacher_id = ?");
+-        $stmt->execute([$group_id, $user['id']]);
+-        if (!$stmt->fetch()) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'المجموعة غير موجودة أو غير مصرح لك']);
+-            exit;
+-        }
+-        
+-        // Verify student exists, is active, and has same gender as teacher
+-        $stmt = $pdo->prepare("SELECT id, gender FROM users WHERE id = ? AND user_type = 'student' AND is_active = TRUE");
+-        $stmt->execute([$student_id]);
+-        $student = $stmt->fetch();
+-        
+-        if (!$student) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'الطالب غير موجود']);
+-            exit;
+-        }
+-        
+-        // Check gender match only when both teacher and student have gender set
+-        if (!empty($user['gender']) && !empty($student['gender']) && $student['gender'] !== $user['gender']) {
+-            header('Content-Type: application/json');
+-            $gender_text = $user['gender'] === 'male' ? 'ذكر' : 'أنثى';
+-            echo json_encode(['success' => false, 'message' => "لا يمكن إضافة طالب من جنس مختلف. المعلم/المعلمة ({$gender_text}) يمكنه/ها تدريس {$gender_text} فقط"]);
+-            exit;
+-        }
+-        
+-        // Check if student is already in group
+-        $stmt = $pdo->prepare("SELECT id FROM group_members WHERE group_id = ? AND student_id = ?");
+-        $stmt->execute([$group_id, $student_id]);
+-        if ($stmt->fetch()) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'الطالب موجود بالفعل في هذه المجموعة']);
+-            exit;
+-        }
+-        
+-        // Add student to group
+-        $stmt = $pdo->prepare("INSERT INTO group_members (group_id, student_id) VALUES (?, ?)");
+-        $stmt->execute([$group_id, $student_id]);
+-        
+-        // Redirect back to groups page
+-        header('Location: ../groups.php?success=تم إضافة الطالب بنجاح');
+-        exit;
+-        
+-    } elseif ($action === 'remove_student') {
+-        // Only teachers can remove students
+-        if ($user['user_type'] !== 'teacher') {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'غير مصرح']);
+-            exit;
+-        }
+-        
+-        $group_id = (int)($_POST['group_id'] ?? 0);
+-        $student_id = (int)($_POST['student_id'] ?? 0);
+-        
+-        if (!$group_id || !$student_id) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'بيانات غير كاملة']);
+-            exit;
+-        }
+-        
+-        // Verify group belongs to teacher
+-        $stmt = $pdo->prepare("SELECT id FROM groups WHERE id = ? AND teacher_id = ?");
+-        $stmt->execute([$group_id, $user['id']]);
+-        if (!$stmt->fetch()) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'المجموعة غير موجودة أو غير مصرح لك']);
+-            exit;
+-        }
+-        
+-        // Remove student from group
+-        $stmt = $pdo->prepare("DELETE FROM group_members WHERE group_id = ? AND student_id = ?");
+-        $stmt->execute([$group_id, $student_id]);
+-        
+-        // Redirect back to groups page
+-        header('Location: ../groups.php?success=تم إزالة الطالب بنجاح');
+-        exit;
+-        
+-    } elseif ($action === 'update_group') {
+-        // Only teachers can update groups
+-        if ($user['user_type'] !== 'teacher') {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'غير مصرح']);
+-            exit;
+-        }
+-        
+-        $group_id = (int)($_POST['group_id'] ?? 0);
+-        $description = sanitize_input($_POST['description'] ?? '');
+-        
+-        if (!$group_id) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'بيانات غير كاملة']);
+-            exit;
+-        }
+-        
+-        // Verify group belongs to teacher
+-        $stmt = $pdo->prepare("SELECT id FROM groups WHERE id = ? AND teacher_id = ?");
+-        $stmt->execute([$group_id, $user['id']]);
+-        if (!$stmt->fetch()) {
+-            header('Content-Type: application/json');
+-            echo json_encode(['success' => false, 'message' => 'المجموعة غير موجودة أو غير مصرح لك']);
+-            exit;
+-        }
+-        
+-        // Update group description
+-        $stmt = $pdo->prepare("UPDATE groups SET description = ? WHERE id = ?");
+-        $stmt->execute([$description, $group_id]);
+-        
+-        // Redirect back to groups page
+-        header('Location: ../groups.php?success=تم تحديث وصف المجموعة بنجاح');
+-        exit;
+-
+-    } else {
+-        header('Content-Type: application/json');
+-        echo json_encode(['success' => false, 'message' => 'إجراء غير معروف']);
+-        exit;
+-    }
+-    
+-} catch (PDOException $e) {
+-    header('Content-Type: application/json');
+-    echo json_encode(['success' => false, 'message' => 'حدث خطأ: ' . $e->getMessage()]);
+-    exit;
+-}
+-?>
+-
+diff --git a/messages.php b/messages.php
+index 308b36b..cea574c 100644
+--- a/messages.php
++++ b/messages.php
+@@ -22,23 +22,32 @@ if ($chat_uid > 0) {
+ 
+ // المحادثات
+ $conversations = $pdo->prepare("
+-    SELECT DISTINCT
+-        CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as other_id,
+-        (SELECT full_name FROM users WHERE id=other_id) as name,
+-        (SELECT user_type FROM users WHERE id=other_id) as utype,
+-        (SELECT is_online FROM users WHERE id=other_id) as is_online,
+-        (SELECT message_text FROM messages
+-            WHERE (sender_id=? AND receiver_id=other_id) OR (sender_id=other_id AND receiver_id=?)
+-            ORDER BY created_at DESC LIMIT 1) as last_msg,
+-        (SELECT created_at FROM messages
+-            WHERE (sender_id=? AND receiver_id=other_id) OR (sender_id=other_id AND receiver_id=?)
+-            ORDER BY created_at DESC LIMIT 1) as last_time,
+-        (SELECT COUNT(*) FROM messages WHERE sender_id=other_id AND receiver_id=? AND is_read = FALSE) as unread
+-    FROM messages
+-    WHERE sender_id=? OR receiver_id=?
++    SELECT
++        other_id,
++        u.full_name as name,
++        u.user_type as utype,
++        u.is_online,
++        (SELECT message_text FROM messages m2
++            WHERE (m2.sender_id=base.uid AND m2.receiver_id=other_id)
++               OR (m2.sender_id=other_id AND m2.receiver_id=base.uid)
++            ORDER BY m2.created_at DESC LIMIT 1) as last_msg,
++        (SELECT m3.created_at FROM messages m3
++            WHERE (m3.sender_id=base.uid AND m3.receiver_id=other_id)
++               OR (m3.sender_id=other_id AND m3.receiver_id=base.uid)
++            ORDER BY m3.created_at DESC LIMIT 1) as last_time,
++        (SELECT COUNT(*) FROM messages m4
++            WHERE m4.sender_id=other_id AND m4.receiver_id=base.uid AND m4.is_read = FALSE) as unread
++    FROM (
++        SELECT DISTINCT
++            ? AS uid,
++            CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as other_id
++        FROM messages
++        WHERE sender_id=? OR receiver_id=?
++    ) base
++    JOIN users u ON u.id = base.other_id
+     ORDER BY last_time DESC
+ ");
+-$conversations->execute(array_fill(0, 8, $user['id']));
++$conversations->execute([$user['id'], $user['id'], $user['id'], $user['id']]);
+ $conversations = $conversations->fetchAll();
+ 
+ // الرسائل مع المستخدم المحدد
+diff --git a/payment.php b/payment.php
+deleted file mode 100644
+index 137f58f..0000000
+--- a/payment.php
++++ /dev/null
+@@ -1,69 +0,0 @@
+-<?php
+-ob_start();
+-error_reporting(0);
+-ini_set('display_errors', 0);
+-
+-require_once '../includes/config.php';
+-require_once '../includes/payment.php';
+-
+-function send_json($data) {
+-    ob_clean();
+-    header('Content-Type: application/json');
+-    echo json_encode($data);
+-    exit;
+-}
+-
+-try {
+-
+-if ($_SERVER['REQUEST_METHOD'] !== 'POST') send_json(['success'=>false,'message'=>'POST مطلوب']);
+-if (!is_logged_in())                        send_json(['success'=>false,'message'=>'يجب تسجيل الدخول']);
+-
+-$user = get_logged_in_user($pdo);
+-if (!$user) send_json(['success'=>false,'message'=>'غير مصرح']);
+-
+-$action = $_POST['action'] ?? '';
+-
+-switch ($action) {
+-
+-    case 'update_pricing':
+-        if ($user['user_type'] !== 'teacher') send_json(['success'=>false,'message'=>'المعلمون فقط']);
+-        $session_price = (isset($_POST['session_price']) && $_POST['session_price'] !== '') ? (float)$_POST['session_price'] : null;
+-        $course_price  = (isset($_POST['course_price'])  && $_POST['course_price']  !== '') ? (float)$_POST['course_price']  : null;
+-        send_json(update_teacher_pricing($pdo, $user['id'], $session_price, $course_price));
+-
+-    case 'pay_teacher':
+-        if ($user['user_type'] !== 'student') send_json(['success'=>false,'message'=>'الطلاب فقط']);
+-        $teacher_id   = (int)($_POST['teacher_id'] ?? 0);
+-        $payment_type = $_POST['payment_type'] ?? '';
+-        if (!in_array($payment_type, ['session','course'])) send_json(['success'=>false,'message'=>'نوع دفع غير صالح']);
+-        $pricing = get_teacher_pricing($pdo, $teacher_id);
+-        if (!$pricing) send_json(['success'=>false,'message'=>'المعلم غير موجود']);
+-        $price_field = $payment_type === 'session' ? 'session_price' : 'price_per_course';
+-        $base_price  = $pricing[$price_field] ?? 0;
+-        if (!$base_price || $base_price <= 0) send_json(['success'=>false,'message'=>'لم يحدد المعلم أسعاره بعد']);
+-        $description = ($payment_type === 'session' ? 'دفع جلسة' : 'دفع دورة') . ' مع المعلم #' . $teacher_id;
+-        $result = process_payment($pdo, $user['id'], $teacher_id, $payment_type . '_payment', $base_price, $description, true);
+-        if ($result['success']) {
+-            $pdo->prepare("INSERT INTO enrollments (student_id,teacher_id,type,sessions_paid,amount_paid,discount_applied) VALUES (?,?,?,?,?,?)")
+-                ->execute([$user['id'], $teacher_id, $payment_type, $payment_type==='session'?1:0,
+-                           $result['final_amount'] ?? $base_price,
+-                           isset($result['discount_applied']) && $result['discount_applied'] > 0 ? true : false]);
+-        }
+-        send_json($result);
+-
+-    case 'top_up':
+-        if ($user['user_type'] !== 'student') send_json(['success'=>false,'message'=>'الطلاب فقط']);
+-        $amount = (float)($_POST['amount'] ?? 0);
+-        if (!in_array($amount, TOP_UP_AMOUNTS)) send_json(['success'=>false,'message'=>'مبلغ غير صالح']);
+-        $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id=?")->execute([$amount, $user['id']]);
+-        $pdo->prepare("INSERT INTO transactions (from_user_id,type,amount,description,status) VALUES (?,'top_up',?,?,'completed')")
+-            ->execute([$user['id'], $amount, 'شحن المحفظة: ' . number_format($amount,0,'.',',') . ' دج']);
+-        send_json(['success'=>true,'message'=>'تم شحن المحفظة بنجاح']);
+-
+-    default:
+-        send_json(['success'=>false,'message'=>'إجراء غير معروف: ' . htmlspecialchars($action)]);
+-}
+-
+-} catch (Throwable $e) {
+-    send_json(['success'=>false,'message'=>$e->getMessage()]);
+-}
+diff --git a/rate_teacher.php b/rate_teacher.php
+deleted file mode 100644
+index 643ad14..0000000
+--- a/rate_teacher.php
++++ /dev/null
+@@ -1,49 +0,0 @@
+-<?php
+-ob_start();
+-error_reporting(0);
+-ini_set('display_errors', 0);
+-ob_start();
+-require_once '../includes/config.php';
+-require_once '../includes/functions.php';
+-
+-header('Content-Type: application/json');
+-
+-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+-    echo json_encode(['success'=>false,'message'=>'POST مطلوب']); exit;
+-}
+-if (!is_logged_in()) {
+-    echo json_encode(['success'=>false,'message'=>'يجب تسجيل الدخول']); exit;
+-}
+-
+-$user = get_logged_in_user($pdo);
+-if (!$user || $user['user_type'] !== 'student') {
+-    echo json_encode(['success'=>false,'message'=>'هذه الخدمة للطلاب فقط']); exit;
+-}
+-
+-$teacher_id = (int)($_POST['teacher_id'] ?? 0);
+-$rating     = (int)($_POST['rating']     ?? 0);
+-$comment    = sanitize_input($_POST['comment'] ?? '');
+-
+-if ($teacher_id <= 0 || $rating < 1 || $rating > 5) {
+-    echo json_encode(['success'=>false,'message'=>'يرجى اختيار تقييم صحيح (1-5)']); exit;
+-}
+-
+-// تحقق من وجود المعلم
+-$stmt = $pdo->prepare("SELECT id FROM users WHERE id=? AND user_type='teacher' AND is_active = TRUE");
+-$stmt->execute([$teacher_id]);
+-if (!$stmt->fetch()) {
+-    echo json_encode(['success'=>false,'message'=>'المعلم غير موجود']); exit;
+-}
+-
+-// السماح بالتقييم لأي طالب — لا يشترط وجود جلسة سابقة
+-try {
+-    $stmt = $pdo->prepare("
+-        INSERT INTO ratings (student_id, teacher_id, rating, comment)
+-        VALUES (?, ?, ?, ?)
+-        ON CONFLICT (student_id, teacher_id) DO UPDATE SET rating=EXCLUDED.rating, comment=EXCLUDED.comment
+-    ");
+-    $stmt->execute([$user['id'], $teacher_id, $rating, $comment ?: null]);
+-    echo json_encode(['success'=>true,'message'=>'تم إرسال تقييمك بنجاح!']);
+-} catch (PDOException $e) {
+-    echo json_encode(['success'=>false,'message'=>'حدث خطأ أثناء الحفظ']);
+-}
+diff --git a/submit_correction.php b/submit_correction.php
+deleted file mode 100644
+index 8da34a0..0000000
+--- a/submit_correction.php
++++ /dev/null
+@@ -1,76 +0,0 @@
+-<?php
+-ob_start();
+-error_reporting(0);
+-ini_set('display_errors', 0);
+-
+-require_once '../includes/config.php';
+-require_once '../includes/auth.php';
+-require_once '../includes/functions.php';
+-require_once '../includes/storage.php';
+-
+-if (!is_logged_in()) { redirect('../login.php'); }
+-$user = get_logged_in_user($pdo);
+-if ($user['user_type'] !== 'teacher') { redirect('../dashboard.php'); }
+-
+-if ($_SERVER['REQUEST_METHOD'] !== 'POST') { redirect('../dashboard.php'); }
+-
+-$recitation_id   = (int)($_POST['recitation_id'] ?? 0);
+-$feedback_text   = sanitize_input($_POST['feedback_text'] ?? '');
+-$rating          = (int)($_POST['rating'] ?? 0);
+-$voice_data      = $_POST['voice_feedback_data'] ?? '';
+-
+-if ($recitation_id <= 0 || empty($feedback_text) || $rating < 1 || $rating > 5) {
+-    $_SESSION['error'] = 'جميع الحقول مطلوبة والتقييم يجب أن يكون بين 1 و 5';
+-    redirect('../recitation.php?id=' . $recitation_id . '&view=correction');
+-}
+-
+-$stmt = $pdo->prepare("SELECT id FROM recitations WHERE id=? AND (teacher_id=? OR teacher_id IS NULL)");
+-$stmt->execute([$recitation_id, $user['id']]);
+-if (!$stmt->fetch()) {
+-    $_SESSION['error'] = 'التلاوة غير موجودة أو لا تنتمي لك';
+-    redirect('../recitation.php?view=review');
+-}
+-
+-try {
+-    $voice_path = null;
+-
+-    if (!empty($voice_data) && strpos($voice_data, 'data:audio') === 0) {
+-        $raw = base64_decode(str_replace([' '], ['+'], preg_replace('#^data:audio/[^;]+;base64,#', '', $voice_data)));
+-        $res = upload_raw($raw, 'feedback', $user['id'], 'webm');
+-        if ($res['success']) {
+-            $voice_path = USE_R2 ? $res['url'] : $res['path'];
+-        }
+-    }
+-
+-    // Track file
+-    if ($voice_path && !USE_R2) {
+-        $pdo->prepare("INSERT INTO teacher_files (teacher_id,file_name,file_path,file_type,file_size,description) VALUES (?,?,?,?,?,?)")
+-            ->execute([$user['id'], basename($voice_path), $voice_path, 'audio/webm', strlen($raw ?? ''), "صوت تصحيح للتلاوة #$recitation_id"]);
+-    }
+-
+-    $pdo->prepare("INSERT INTO corrections (recitation_id,teacher_id,feedback_text,voice_feedback_path,rating) VALUES (?,?,?,?,?)")
+-        ->execute([$recitation_id, $user['id'], $feedback_text, $voice_path, $rating]);
+-
+-    $pdo->prepare("UPDATE recitations SET status='reviewed', teacher_id=? WHERE id=?")
+-        ->execute([$user['id'], $recitation_id]);
+-
+-    log_activity($pdo, $user['id'], 'correction_submitted', "تصحيح للتلاوة #$recitation_id - تقييم: $rating", 'recitation', $recitation_id);
+-
+-    if ($rating >= 4) {
+-        $rec = $pdo->prepare("SELECT student_id,surah_name FROM recitations WHERE id=?");
+-        $rec->execute([$recitation_id]);
+-        $r = $rec->fetch();
+-        if ($r) {
+-            $pdo->prepare("INSERT INTO progress (student_id,surah_name,memorized_verses,total_verses) VALUES (?,?,1,1)
+-                ON CONFLICT (student_id,surah_name) DO UPDATE SET memorized_verses=progress.memorized_verses+1, last_updated=CURRENT_TIMESTAMP")
+-                ->execute([$r['student_id'], $r['surah_name']]);
+-        }
+-    }
+-
+-    $_SESSION['success'] = 'تم إرسال التصحيح بنجاح';
+-    redirect('../recitation.php?view=review');
+-
+-} catch (Exception $e) {
+-    $_SESSION['error'] = 'حدث خطأ: ' . $e->getMessage();
+-    redirect('../recitation.php?id=' . $recitation_id . '&view=correction');
+-}
+diff --git a/subscriptions.php b/subscriptions.php
+deleted file mode 100644
+index 0a50a5a..0000000
+--- a/subscriptions.php
++++ /dev/null
+@@ -1,163 +0,0 @@
+-<?php
+-require_once '../includes/config.php';
+-require_once '../includes/auth.php';
+-require_once '../includes/functions.php';
+-
+-require_login();
+-$user = get_logged_in_user($pdo);
+-if (!$user || $user['user_type'] !== 'admin') redirect('../login.php');
+-
+-// إنشاء/تعديل باقة
+-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+-    $action = $_POST['action'] ?? '';
+-    if ($action === 'create') {
+-        $name_ar      = trim($_POST['name_ar'] ?? '');
+-        $price        = (float)($_POST['price'] ?? 0);
+-        $duration     = (int)($_POST['duration_days'] ?? 30);
+-        $features     = trim($_POST['features'] ?? '');
+-        if ($name_ar && $price > 0) {
+-            $pdo->prepare("INSERT INTO subscriptions (name_ar,name,price,duration_days,features) VALUES (?,?,?,?,?)")
+-                ->execute([$name_ar, $name_ar, $price, $duration, $features]);
+-            $_SESSION['flash_success'] = 'تمت إضافة الباقة بنجاح.';
+-        }
+-    } elseif ($action === 'delete') {
+-        $id = (int)$_POST['pkg_id'];
+-        $pdo->prepare("DELETE FROM subscriptions WHERE id=?")->execute([$id]);
+-        $_SESSION['flash_success'] = 'تم حذف الباقة.';
+-    } elseif ($action === 'revoke') {
+-        $sub_id = (int)$_POST['sub_id'];
+-        $pdo->prepare("UPDATE user_subscriptions SET status='cancelled' WHERE id=?")->execute([$sub_id]);
+-        $_SESSION['flash_success'] = 'تم إلغاء الاشتراك.';
+-    }
+-    redirect('subscriptions.php');
+-}
+-
+-$packages = $pdo->query("SELECT * FROM subscriptions ORDER BY price ASC")->fetchAll();
+-$active_subs = $pdo->query("
+-    SELECT us.*, u.full_name, u.email, s.name_ar
+-    FROM user_subscriptions us
+-    JOIN users u ON us.user_id=u.id
+-    JOIN subscriptions s ON us.subscription_id=s.id
+-    WHERE us.status='active' AND us.end_date >= CURRENT_DATE
+-    ORDER BY us.created_at DESC
+-")->fetchAll();
+-
+-$active_page = 'subscriptions';
+-?>
+-<!DOCTYPE html>
+-<html lang="ar" dir="rtl">
+-<head>
+-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+-    <title>الاشتراكات — رتل معي</title>
+-    <link rel="stylesheet" href="../assets/css/style.css">
+-    <link rel="stylesheet" href="../assets/css/dashboard.css">
+-    <style>
+-        .section-card{background:var(--glass-white);border:1px solid var(--glass-border);border-radius:var(--radius-xl);padding:1.75rem;margin-bottom:1.5rem;box-shadow:var(--shadow-md)}
+-        .section-card h3{font-weight:700;margin-bottom:1.25rem;border-bottom:1px solid var(--sand);padding-bottom:.75rem}
+-        .pkg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem}
+-        .pkg-card{background:var(--warm-cream);border:1px solid var(--sand);border-radius:var(--radius-lg);padding:1.25rem;position:relative}
+-        .pkg-price{font-size:1.8rem;font-weight:800;color:var(--royal-blue);margin:.25rem 0}
+-        .pkg-name{font-weight:700;font-size:1rem;color:var(--charcoal)}
+-        .pkg-period{font-size:.82rem;color:var(--slate)}
+-        .subs-table{width:100%;border-collapse:collapse}
+-        .subs-table th{background:var(--warm-cream);padding:.7rem 1rem;text-align:right;font-size:.82rem;color:var(--slate);font-weight:600}
+-        .subs-table td{padding:.75rem 1rem;border-bottom:1px solid var(--sand);font-size:.88rem;vertical-align:middle}
+-        .btn-sm{padding:.35rem .85rem;font-size:.8rem;border-radius:var(--radius-md)}
+-    </style>
+-</head>
+-<body>
+-<div class="dashboard-container" style="padding-top:0">
+-<?php include '../includes/header.php'; ?>
+-<div style="padding:2rem">
+-
+-<?php if (isset($_SESSION['flash_success'])): ?>
+-<div class="alert alert-success" style="margin-bottom:1rem"><?php echo htmlspecialchars($_SESSION['flash_success']); unset($_SESSION['flash_success']); ?></div>
+-<?php endif; ?>
+-
+-<h2 style="margin-bottom:1.5rem">إدارة الاشتراكات</h2>
+-
+-<!-- الباقات الحالية -->
+-<div class="section-card">
+-    <h3>باقات الاشتراك (<?php echo count($packages); ?>)</h3>
+-    <div class="pkg-grid">
+-        <?php foreach ($packages as $p): ?>
+-        <div class="pkg-card">
+-            <div class="pkg-name"><?php echo htmlspecialchars($p['name_ar']); ?></div>
+-            <div class="pkg-price"><?php echo number_format($p['price'],0,'.',','); ?> دج</div>
+-            <div class="pkg-period"><?php echo $p['duration_days']; ?> يوم</div>
+-            <?php if ($p['features']): ?><div style="font-size:.8rem;color:var(--slate);margin-top:.5rem"><?php echo htmlspecialchars($p['features']); ?></div><?php endif; ?>
+-            <form method="POST" style="margin-top:.75rem" onsubmit="return confirm('هل تريد حذف هذه الباقة؟')">
+-                <input type="hidden" name="action" value="delete">
+-                <input type="hidden" name="pkg_id" value="<?php echo $p['id']; ?>">
+-                <button class="btn btn-outline btn-sm" type="submit" style="border-color:#dc2626;color:#dc2626;width:100%">حذف الباقة</button>
+-            </form>
+-        </div>
+-        <?php endforeach; ?>
+-    </div>
+-
+-    <!-- إضافة باقة جديدة -->
+-    <div style="background:var(--warm-cream);border-radius:var(--radius-lg);padding:1.25rem;margin-top:1rem">
+-        <h4 style="margin-bottom:1rem;font-weight:700">+ إضافة باقة جديدة</h4>
+-        <form method="POST">
+-            <input type="hidden" name="action" value="create">
+-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+-                <div class="form-group" style="margin:0">
+-                    <label class="form-label">اسم الباقة (عربي)</label>
+-                    <input type="text" name="name_ar" class="form-input" placeholder="مثال: شهري" required>
+-                </div>
+-                <div class="form-group" style="margin:0">
+-                    <label class="form-label">السعر (دج)</label>
+-                    <input type="number" name="price" class="form-input" min="1" placeholder="0" required>
+-                </div>
+-                <div class="form-group" style="margin:0">
+-                    <label class="form-label">المدة (يوم)</label>
+-                    <input type="number" name="duration_days" class="form-input" value="30" min="1" required>
+-                </div>
+-            </div>
+-            <div class="form-group" style="margin:0 0 1rem">
+-                <label class="form-label">المميزات (مفصولة بفاصلة)</label>
+-                <input type="text" name="features" class="form-input" placeholder="مثال: وصول كامل, خصم 15%">
+-            </div>
+-            <button type="submit" class="btn btn-primary">إضافة الباقة</button>
+-        </form>
+-    </div>
+-</div>
+-
+-<!-- الاشتراكات النشطة -->
+-<div class="section-card">
+-    <h3>الاشتراكات النشطة (<?php echo count($active_subs); ?>)</h3>
+-    <?php if (count($active_subs) > 0): ?>
+-    <div style="overflow-x:auto">
+-    <table class="subs-table">
+-        <thead><tr><th>المستخدم</th><th>الباقة</th><th>تاريخ البداية</th><th>تاريخ الانتهاء</th><th>إجراء</th></tr></thead>
+-        <tbody>
+-            <?php foreach ($active_subs as $s): ?>
+-            <tr>
+-                <td>
+-                    <div style="font-weight:700"><?php echo htmlspecialchars($s['full_name']); ?></div>
+-                    <div style="font-size:.8rem;color:var(--slate)"><?php echo htmlspecialchars($s['email']); ?></div>
+-                </td>
+-                <td><?php echo htmlspecialchars($s['name_ar']); ?></td>
+-                <td><?php echo date('d/m/Y', strtotime($s['start_date'])); ?></td>
+-                <td><?php echo date('d/m/Y', strtotime($s['end_date'])); ?></td>
+-                <td>
+-                    <form method="POST" onsubmit="return confirm('هل تريد إلغاء هذا الاشتراك؟')">
+-                        <input type="hidden" name="action" value="revoke">
+-                        <input type="hidden" name="sub_id" value="<?php echo $s['id']; ?>">
+-                        <button class="btn btn-outline btn-sm" type="submit" style="border-color:#dc2626;color:#dc2626">إلغاء</button>
+-                    </form>
+-                </td>
+-            </tr>
+-            <?php endforeach; ?>
+-        </tbody>
+-    </table>
+-    </div>
+-    <?php else: ?>
+-    <div style="text-align:center;padding:2rem;color:var(--slate)">لا توجد اشتراكات نشطة حالياً.</div>
+-    <?php endif; ?>
+-</div>
+-</div>
+-</div>
+-<script src="../assets/js/dashboard.js"></script>
+-</body>
+-</html>
+diff --git a/users.php b/users.php
+deleted file mode 100644
+index f511932..0000000
+--- a/users.php
++++ /dev/null
+@@ -1,184 +0,0 @@
+-<?php
+-require_once '../includes/config.php';
+-require_once '../includes/auth.php';
+-require_once '../includes/functions.php';
+-require_once '../includes/payment.php';
+-
+-require_login();
+-$user = get_logged_in_user($pdo);
+-if (!$user || $user['user_type'] !== 'admin') redirect('../login.php');
+-
+-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+-    $action  = $_POST['action'] ?? '';
+-    $uid     = (int)($_POST['user_id'] ?? 0);
+-    if ($uid && $uid !== $user['id']) {
+-        if ($action === 'toggle_active') {
+-            $pdo->prepare("UPDATE users SET is_active = TRUE - is_active WHERE id=?")->execute([$uid]);
+-            $_SESSION['flash_success'] = 'تم تحديث حالة المستخدم.';
+-        } elseif ($action === 'toggle_star') {
+-            $pdo->prepare("UPDATE users SET has_star = TRUE - has_star WHERE id=?")->execute([$uid]);
+-            $_SESSION['flash_success'] = 'تم تحديث نجمة المستخدم.';
+-        } elseif ($action === 'add_wallet') {
+-            $amount = (float)($_POST['amount'] ?? 0);
+-            if ($amount > 0) {
+-                $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id=?")->execute([$amount, $uid]);
+-                $pdo->prepare("INSERT INTO transactions (from_user_id,type,amount,description,status) VALUES (?,'top_up',?,?,'completed')")->execute([$uid, $amount, 'إضافة رصيد من الأدمن']);
+-                $_SESSION['flash_success'] = 'تمت إضافة ' . number_format($amount,0,'.',',') . ' دج للمستخدم.';
+-            }
+-        }
+-    }
+-    redirect('users.php');
+-}
+-
+-$search = $_GET['q'] ?? '';
+-$type   = $_GET['type'] ?? 'all';
+-
+-$params = [];
+-$where  = "1=1";
+-if ($type !== 'all') { $where .= " AND user_type=?"; $params[] = $type; }
+-if ($search) { $where .= " AND (full_name LIKE ? OR email LIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
+-
+-$stmt = $pdo->prepare("SELECT * FROM users WHERE $where ORDER BY created_at DESC LIMIT 100");
+-$stmt->execute($params);
+-$users = $stmt->fetchAll();
+-
+-$active_page = 'users';
+-?>
+-<!DOCTYPE html>
+-<html lang="ar" dir="rtl">
+-<head>
+-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+-    <title>إدارة المستخدمين — رتل معي</title>
+-    <link rel="stylesheet" href="../assets/css/style.css">
+-    <link rel="stylesheet" href="../assets/css/dashboard.css">
+-    <style>
+-        .users-table{width:100%;border-collapse:collapse}
+-        .users-table th{background:var(--warm-cream);padding:.75rem 1rem;text-align:right;font-size:.85rem;color:var(--slate);font-weight:600}
+-        .users-table td{padding:.85rem 1rem;border-bottom:1px solid var(--sand);vertical-align:middle;font-size:.9rem}
+-        .users-table tr:hover td{background:var(--warm-cream)}
+-        .badge{padding:.2rem .7rem;border-radius:50px;font-size:.78rem;font-weight:700}
+-        .badge-student{background:#dbeafe;color:#1d4ed8}
+-        .badge-teacher{background:#d1fae5;color:#065f46}
+-        .badge-admin{background:#fef3c7;color:#92400e}
+-        .badge-active{background:#d1fae5;color:#065f46}
+-        .badge-inactive{background:#fee2e2;color:#991b1b}
+-        .badge-star{background:#fef3c7;color:#92400e}
+-        .action-btns{display:flex;gap:.4rem;flex-wrap:wrap}
+-        .btn-sm{padding:.35rem .85rem;font-size:.8rem;border-radius:var(--radius-md)}
+-        .search-bar{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
+-        .search-bar input{flex:1;min-width:200px}
+-        .search-bar select{min-width:140px}
+-        .section-card{background:var(--glass-white);border:1px solid var(--glass-border);border-radius:var(--radius-xl);padding:1.75rem;margin-bottom:1.5rem;box-shadow:var(--shadow-md)}
+-    </style>
+-</head>
+-<body>
+-<div class="dashboard-container" style="padding-top:0">
+-<?php include '../includes/header.php'; ?>
+-<div style="padding:2rem">
+-
+-<?php if (isset($_SESSION['flash_success'])): ?>
+-<div class="alert alert-success" style="margin-bottom:1rem"><?php echo htmlspecialchars($_SESSION['flash_success']); unset($_SESSION['flash_success']); ?></div>
+-<?php endif; ?>
+-
+-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem">
+-    <h2 style="margin:0">إدارة المستخدمين (<?php echo count($users); ?>)</h2>
+-</div>
+-
+-<form method="GET" class="search-bar">
+-    <input type="text" name="q" class="form-input" placeholder="بحث بالاسم أو البريد..." value="<?php echo htmlspecialchars($search); ?>">
+-    <select name="type" class="form-select">
+-        <option value="all" <?php echo $type==='all'?'selected':''; ?>>جميع الأنواع</option>
+-        <option value="student" <?php echo $type==='student'?'selected':''; ?>>الطلاب</option>
+-        <option value="teacher" <?php echo $type==='teacher'?'selected':''; ?>>المعلمون</option>
+-        <option value="admin" <?php echo $type==='admin'?'selected':''; ?>>المدراء</option>
+-    </select>
+-    <button type="submit" class="btn btn-primary">بحث</button>
+-    <a href="users.php" class="btn btn-outline">إعادة تعيين</a>
+-</form>
+-
+-<div class="section-card">
+-    <div style="overflow-x:auto">
+-    <table class="users-table">
+-        <thead>
+-            <tr>
+-                <th>المستخدم</th>
+-                <th>النوع</th>
+-                <th>الحالة</th>
+-                <th>الرصيد</th>
+-                <th>تاريخ التسجيل</th>
+-                <th>نجمة</th>
+-                <th>الإجراءات</th>
+-            </tr>
+-        </thead>
+-        <tbody>
+-            <?php foreach ($users as $u): ?>
+-            <tr>
+-                <td>
+-                    <div style="font-weight:700"><?php echo htmlspecialchars($u['full_name']); ?></div>
+-                    <div style="font-size:.8rem;color:var(--slate)"><?php echo htmlspecialchars($u['email']); ?></div>
+-                    <?php if (!empty($u['phone'])): ?><div style="font-size:.78rem;color:var(--slate)"><?php echo htmlspecialchars($u['phone']); ?></div><?php endif; ?>
+-                </td>
+-                <td><span class="badge badge-<?php echo $u['user_type']; ?>"><?php echo $u['user_type']==='student'?'طالب':($u['user_type']==='teacher'?'معلم':'أدمن'); ?></span></td>
+-                <td><span class="badge <?php echo $u['is_active']?'badge-active':'badge-inactive'; ?>"><?php echo $u['is_active']?'نشط':'معطل'; ?></span></td>
+-                <td><?php echo number_format($u['wallet_balance']??0,0,'.',','); ?> دج</td>
+-                <td style="white-space:nowrap"><?php echo date('d/m/Y', strtotime($u['created_at'])); ?></td>
+-                <td><?php echo !empty($u['has_star'])?'⭐':'—'; ?></td>
+-                <td>
+-                    <div class="action-btns">
+-                        <?php if ($u['id'] !== $user['id']): ?>
+-                        <form method="POST" style="display:inline">
+-                            <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+-                            <input type="hidden" name="action" value="toggle_active">
+-                            <button class="btn btn-outline btn-sm" type="submit"><?php echo $u['is_active']?'تعطيل':'تفعيل'; ?></button>
+-                        </form>
+-                        <form method="POST" style="display:inline">
+-                            <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+-                            <input type="hidden" name="action" value="toggle_star">
+-                            <button class="btn btn-gold btn-sm" type="submit" style="font-size:.8rem;padding:.35rem .85rem"><?php echo !empty($u['has_star'])?'إزالة ⭐':'منح ⭐'; ?></button>
+-                        </form>
+-                        <button onclick="showAddWallet(<?php echo $u['id']; ?>,'<?php echo addslashes($u['full_name']); ?>')" class="btn btn-primary btn-sm">+ رصيد</button>
+-                        <?php endif; ?>
+-                    </div>
+-                </td>
+-            </tr>
+-            <?php endforeach; ?>
+-        </tbody>
+-    </table>
+-    </div>
+-</div>
+-</div>
+-</div>
+-
+-<!-- مودال إضافة رصيد -->
+-<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:9999;display:none;align-items:center;justify-content:center" id="walletModal">
+-    <div style="background:white;border-radius:var(--radius-xl);padding:2rem;max-width:400px;width:90%;box-shadow:var(--shadow-xl)">
+-        <h3 style="margin-bottom:1.25rem">إضافة رصيد للمستخدم</h3>
+-        <p id="wm_name" style="color:var(--slate);margin-bottom:1rem"></p>
+-        <form method="POST">
+-            <input type="hidden" name="action" value="add_wallet">
+-            <input type="hidden" name="user_id" id="wm_uid" value="">
+-            <div class="form-group">
+-                <label class="form-label">المبلغ (دج)</label>
+-                <input type="number" name="amount" class="form-input" min="1" step="100" placeholder="0" required>
+-            </div>
+-            <div style="display:flex;gap:.75rem">
+-                <button type="submit" class="btn btn-primary" style="flex:1">إضافة</button>
+-                <button type="button" onclick="document.getElementById('walletModal').style.display='none'" class="btn btn-outline" style="flex:1">إلغاء</button>
+-            </div>
+-        </form>
+-    </div>
+-</div>
+-
+-<script>
+-function showAddWallet(uid, name) {
+-    document.getElementById('wm_uid').value = uid;
+-    document.getElementById('wm_name').textContent = 'المستخدم: ' + name;
+-    document.getElementById('walletModal').style.display = 'flex';
+-}
+-document.getElementById('walletModal').addEventListener('click', function(e) {
+-    if (e.target === this) this.style.display = 'none';
+-});
+-</script>
+-<script src="../assets/js/dashboard.js"></script>
+-</body>
+-</html>
+-- 
+2.43.0
+

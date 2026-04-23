@@ -38,12 +38,12 @@ if ($action === 'send') {
     $msgs = $stmt->fetchAll();
     // تحديد كمقروء
     if ($msgs) {
-        $pdo->prepare("UPDATE messages SET is_read=1 WHERE sender_id=? AND receiver_id=? AND is_read=0")->execute([$with, $user['id']]);
+        $pdo->prepare("UPDATE messages SET is_read=TRUE WHERE sender_id=? AND receiver_id=? AND is_read=FALSE")->execute([$with, $user['id']]);
     }
     echo json_encode(['success'=>true,'messages'=>$msgs]);
 
 } elseif ($action === 'unread_count') {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND is_read=0");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND is_read=FALSE");
     $stmt->execute([$user['id']]);
     echo json_encode(['success'=>true,'count'=>(int)$stmt->fetchColumn()]);
 

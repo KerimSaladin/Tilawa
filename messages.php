@@ -22,23 +22,32 @@ if ($chat_uid > 0) {
 
 // المحادثات
 $conversations = $pdo->prepare("
-    SELECT DISTINCT
-        CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as other_id,
-        (SELECT full_name FROM users WHERE id=other_id) as name,
-        (SELECT user_type FROM users WHERE id=other_id) as utype,
-        (SELECT is_online FROM users WHERE id=other_id) as is_online,
-        (SELECT message_text FROM messages
-            WHERE (sender_id=? AND receiver_id=other_id) OR (sender_id=other_id AND receiver_id=?)
-            ORDER BY created_at DESC LIMIT 1) as last_msg,
-        (SELECT created_at FROM messages
-            WHERE (sender_id=? AND receiver_id=other_id) OR (sender_id=other_id AND receiver_id=?)
-            ORDER BY created_at DESC LIMIT 1) as last_time,
-        (SELECT COUNT(*) FROM messages WHERE sender_id=other_id AND receiver_id=? AND is_read = FALSE) as unread
-    FROM messages
-    WHERE sender_id=? OR receiver_id=?
+    SELECT
+        other_id,
+        u.full_name as name,
+        u.user_type as utype,
+        u.is_online,
+        (SELECT message_text FROM messages m2
+            WHERE (m2.sender_id=base.uid AND m2.receiver_id=other_id)
+               OR (m2.sender_id=other_id AND m2.receiver_id=base.uid)
+            ORDER BY m2.created_at DESC LIMIT 1) as last_msg,
+        (SELECT m3.created_at FROM messages m3
+            WHERE (m3.sender_id=base.uid AND m3.receiver_id=other_id)
+               OR (m3.sender_id=other_id AND m3.receiver_id=base.uid)
+            ORDER BY m3.created_at DESC LIMIT 1) as last_time,
+        (SELECT COUNT(*) FROM messages m4
+            WHERE m4.sender_id=other_id AND m4.receiver_id=base.uid AND m4.is_read = FALSE) as unread
+    FROM (
+        SELECT DISTINCT
+            ? AS uid,
+            CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as other_id
+        FROM messages
+        WHERE sender_id=? OR receiver_id=?
+    ) base
+    JOIN users u ON u.id = base.other_id
     ORDER BY last_time DESC
 ");
-$conversations->execute(array_fill(0, 8, $user['id']));
+$conversations->execute([$user['id'], $user['id'], $user['id'], $user['id']]);
 $conversations = $conversations->fetchAll();
 
 // الرسائل مع المستخدم المحدد

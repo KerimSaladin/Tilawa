@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = 'اسم المجموعة مطلوب';
     } else {
         try {
-            $stmt = $pdo->prepare("INSERT INTO `groups` (teacher_id, group_name, description) VALUES (?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO groups (teacher_id, group_name, description) VALUES (?, ?, ?)");
             $stmt->execute([$user['id'], $group_name, $description]);
             $success = 'تم إنشاء المجموعة بنجاح';
         } catch (PDOException $e) {
@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Get all groups for this teacher
-$stmt = $pdo->prepare("SELECT id, teacher_id, group_name as name, description, gender, created_at FROM `groups` WHERE teacher_id = ? ORDER BY created_at DESC");
+$stmt = $pdo->prepare("SELECT id, teacher_id, group_name as name, description, gender, created_at FROM groups WHERE teacher_id = ? ORDER BY created_at DESC");
 $stmt->execute([$user['id']]);
 $groups = $stmt->fetchAll();
 
