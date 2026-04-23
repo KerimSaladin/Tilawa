@@ -25,23 +25,23 @@ if ($chat_uid > 0) {
 // المحادثات
 $conversations = $pdo->prepare("
     SELECT
-        other_id,
+        base.other_id,
         u.full_name as name,
         u.user_type as utype,
         u.is_online,
         (SELECT message_text FROM messages m2
-            WHERE (m2.sender_id=base.uid AND m2.receiver_id=other_id)
-               OR (m2.sender_id=other_id AND m2.receiver_id=base.uid)
+            WHERE (m2.sender_id=base.uid AND m2.receiver_id=base.other_id)
+               OR (m2.sender_id=base.other_id AND m2.receiver_id=base.uid)
             ORDER BY m2.created_at DESC LIMIT 1) as last_msg,
         (SELECT m3.created_at FROM messages m3
-            WHERE (m3.sender_id=base.uid AND m3.receiver_id=other_id)
-               OR (m3.sender_id=other_id AND m3.receiver_id=base.uid)
+            WHERE (m3.sender_id=base.uid AND m3.receiver_id=base.other_id)
+               OR (m3.sender_id=base.other_id AND m3.receiver_id=base.uid)
             ORDER BY m3.created_at DESC LIMIT 1) as last_time,
         (SELECT COUNT(*) FROM messages m4
-            WHERE m4.sender_id=other_id AND m4.receiver_id=base.uid AND m4.is_read = FALSE) as unread
+            WHERE m4.sender_id=base.other_id AND m4.receiver_id=base.uid AND m4.is_read = FALSE) as unread
     FROM (
         SELECT DISTINCT
-            ? AS uid,
+            CAST(? AS INT) AS uid,
             CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as other_id
         FROM messages
         WHERE sender_id=? OR receiver_id=?
