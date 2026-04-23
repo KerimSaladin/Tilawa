@@ -455,58 +455,6 @@ if ($user['user_type'] === 'teacher') {
         <a href="wallet.php" class="action-card"><div class="action-icon"><img src="assets/images/chart.svg" alt=""></div><div class="action-title">المحفظة</div></a>
     </div>
 
-    <!-- المعلمون المتاحون -->
-    <!-- <div class="teachers-section">
-        <h3>المعلمون المتاحون</h3>
-        <?php if (count($teachers) > 0): ?>
-        <div class="teachers-grid">
-            <?php foreach ($teachers as $t):
-                $tp  = get_teacher_pricing($pdo, $t['id']);
-                $avg = round($t['avg_rating'], 1);
-                $stars = str_repeat('★', (int)$avg) . str_repeat('☆', 5-(int)$avg);
-                $online = is_teacher_online($pdo, $t['id']);
-                $initial = mb_substr($t['full_name'], 0, 1, 'UTF-8');
-            ?>
-            <div class="teacher-card">
-                <div class="teacher-header">
-                    <div class="teacher-avatar"><?php echo $initial; ?></div>
-                    <div>
-                        <div class="teacher-name">
-                            <?php echo htmlspecialchars($t['full_name']); ?>
-                            <?php if ($online): ?><span class="online-dot" title="متصل الآن"></span><?php else: ?><span class="offline-dot" title="غير متصل"></span><?php endif; ?>
-                        </div>
-                        <div class="teacher-rating">
-                            <span class="stars"><?php echo $stars; ?></span>
-                            <span>(<?php echo $avg; ?> / <?php echo $t['rating_count']; ?> تقييم)</span>
-                        </div>
-                    </div>
-                </div>
-                <?php if ($tp['session_price']): ?>
-                <div class="teacher-pricing-row"><span class="price-label">جلسة واحدة</span><span class="price-value"><?php echo number_format($tp['session_price'],0,'.',','); ?> دج</span></div>
-                <?php endif; ?>
-                <?php if ($tp['price_per_course']): ?>
-                <div class="teacher-pricing-row"><span class="price-label">الدورة كاملة</span><span class="price-value"><?php echo number_format($tp['price_per_course'],0,'.',','); ?> دج</span></div>
-                <?php endif; ?>
-                <?php if (!$tp['session_price'] && !$tp['price_per_course']): ?>
-                <p style="color:var(--slate);font-size:.85rem;margin:.5rem 0">لم يحدد المعلم أسعاره بعد</p>
-                <?php endif; ?>
-                <div class="teacher-actions" style="margin-top:1rem;display:flex;flex-direction:column;gap:.5rem">
-                    <?php if ($tp['session_price']): ?>
-                    <button onclick="openPaymentModal(<?php echo $t['id']; ?>,'session',<?php echo $tp['session_price']; ?>,'<?php echo addslashes($t['full_name']); ?>')" class="btn btn-primary" style="font-size:.9rem;padding:.6rem">حجز جلسة</button>
-                    <?php endif; ?>
-                    <?php if ($tp['price_per_course']): ?>
-                    <button onclick="openPaymentModal(<?php echo $t['id']; ?>,'course',<?php echo $tp['price_per_course']; ?>,'<?php echo addslashes($t['full_name']); ?>')" class="btn btn-secondary" style="font-size:.9rem;padding:.6rem">التسجيل في الدورة</button>
-                    <?php endif; ?>
-                    <button onclick="openRatingModal(<?php echo $t['id']; ?>,'<?php echo addslashes($t['full_name']); ?>')" class="btn btn-outline" style="font-size:.85rem;padding:.5rem">تقييم المعلم</button>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-        <?php else: ?>
-        <div style="text-align:center;padding:3rem;color:var(--slate)">لا يوجد معلمون متاحون حالياً.</div>
-        <?php endif; ?>
-    </div> -->
-
     <!-- آخر التصحيحات -->
     <?php if (count($recent_corrections) > 0): ?>
     <div class="section-card">
