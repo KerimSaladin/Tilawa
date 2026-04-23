@@ -3,6 +3,8 @@ require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/functions.php';
 
+if (!$pdo) { http_response_code(503); die('قاعدة البيانات غير متاحة مؤقتاً.'); }
+
 require_login();
 $user = get_logged_in_user($pdo);
 if (!$user) redirect('login.php');
@@ -42,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['user_type'] === 'teacher') {
             } else {
                 $stmt_ls = $pdo->prepare("
                     INSERT INTO live_sessions (teacher_id, student_id, status, start_time)
-                    VALUES (?, NULL, 'available', ?) RETURNING id
+                    VALUES (?, 0, 'available', ?) RETURNING id
                 ");
                 $stmt_ls->execute([$user['id'], $start_dt]);
                 $lid = $stmt_ls->fetchColumn();
@@ -79,13 +81,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['user_type'] === 'student') {
     if ($action === 'book_slot') {
         $lid = (int)$_POST['session_id'];
         // تحقق من أن الموعد متاح ولم يُحجز
-        $stmt = $pdo->prepare("SELECT * FROM live_sessions WHERE id=? AND status='available' AND (student_id IS NULL OR student_id=0)");
+        $stmt = $pdo->prepare("SELECT * FROM live_sessions WHERE id=? AND status='available' AND student_id=0");
         $stmt->execute([$lid]);
         $slot = $stmt->fetch();
         if (!$slot) {
             $flash = ['type'=>'error','msg'=>'هذا الموعد غير متاح أو تم حجزه مسبقاً'];
         } else {
-            $pdo->prepare("UPDATE live_sessions SET student_id=?, status='scheduled' WHERE id=? AND (student_id IS NULL OR student_id=0)")->execute([$user['id'], $lid]);
+            $pdo->prepare("UPDATE live_sessions SET student_id=?, status='scheduled' WHERE id=? AND student_id=0")->execute([$user['id'], $lid]);
             $flash = ['type'=>'success','msg'=>'تم حجز الموعد بنجاح! سيتواصل معك المعلم قريباً.'];
         }
     }
@@ -113,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['user_type'] === 'student') {
     // إلغاء حجز
     if ($action === 'cancel_booking') {
         $lid = (int)$_POST['session_id'];
-        $pdo->prepare("UPDATE live_sessions SET student_id=NULL, status='available' WHERE id=? AND student_id=?")->execute([$lid, $user['id']]);
+        $pdo->prepare("UPDATE live_sessions SET student_id=0, status='available' WHERE id=? AND student_id=?")->execute([$lid, $user['id']]);
         $flash = ['type'=>'success','msg'=>'تم إلغاء الحجز.'];
     }
 }
@@ -167,7 +169,7 @@ if ($user['user_type'] === 'teacher') {
         FROM live_sessions ls
         JOIN users u ON ls.teacher_id=u.id
         LEFT JOIN ratings r ON r.teacher_id=u.id
-        WHERE ls.status='available' AND (ls.student_id IS NULL OR ls.student_id = 0)
+        WHERE ls.status='available' AND ls.student_id = 0
         AND ls.start_time > NOW()
         GROUP BY ls.id, u.full_name, u.id
         ORDER BY ls.start_time ASC

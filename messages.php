@@ -3,6 +3,8 @@ require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/functions.php';
 
+if (!$pdo) { http_response_code(503); die('قاعدة البيانات غير متاحة مؤقتاً.'); }
+
 require_login();
 $user = get_logged_in_user($pdo);
 if (!$user) redirect('login.php');
