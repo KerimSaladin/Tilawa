@@ -456,7 +456,7 @@ if ($user['user_type'] === 'teacher') {
     </div>
 
     <!-- المعلمون المتاحون -->
-    <div class="teachers-section">
+    <!-- <div class="teachers-section">
         <h3>المعلمون المتاحون</h3>
         <?php if (count($teachers) > 0): ?>
         <div class="teachers-grid">
@@ -505,7 +505,7 @@ if ($user['user_type'] === 'teacher') {
         <?php else: ?>
         <div style="text-align:center;padding:3rem;color:var(--slate)">لا يوجد معلمون متاحون حالياً.</div>
         <?php endif; ?>
-    </div>
+    </div> -->
 
     <!-- آخر التصحيحات -->
     <?php if (count($recent_corrections) > 0): ?>
