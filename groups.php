@@ -638,9 +638,6 @@ $all_students = $stmt->fetchAll();
                                     لا يوجد طلاب مؤهلون للإضافة. الطلاب يظهرون هنا بعد إتمام الدفع لك.
                                 </p>
                             <?php else: ?>
-                            <?php if (empty($all_students)): ?>
-                                <?php // already shown above — no form to render ?>
-                            <?php else: ?>
                             <form method="POST" action="api/manage_group.php" style="display: flex; gap: 0.5rem; align-items: flex-end;">
                                 <input type="hidden" name="action" value="add_student">
                                 <input type="hidden" name="group_id" value="<?php echo $group['id']; ?>">
