@@ -666,7 +666,6 @@ $all_students = $stmt->fetchAll();
                                 <button type="submit" class="btn btn-primary">إضافة</button>
                             </form>
                             <?php endif; ?>
-                            <?php endif; ?>
                         </div>
                     </div>
                     <?php endforeach; ?>

@@ -1,15 +1,34 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
-require_once __DIR__ . '/platform_settings.php';
 
 /**
  * Format amount with thousands separator for Algerian Dinar
- * @param float $amount Amount to format
- * @return string Formatted amount with DZD
  */
 function format_currency($amount) {
     return number_format($amount, 0, '.', ',') . ' دج';
+}
+
+/**
+ * Read a single platform_settings value.
+ * Falls back to $default if the table doesn't exist yet or the key is missing.
+ */
+function get_platform_setting($pdo, string $key, $default = null) {
+    try {
+        $st = $pdo->prepare("SELECT value FROM platform_settings WHERE key = ?");
+        $st->execute([$key]);
+        $row = $st->fetch();
+        return $row ? $row['value'] : $default;
+    } catch (Throwable $e) {
+        return $default;
+    }
+}
+
+/**
+ * Current platform commission percentage — reads from DB, falls back to constant.
+ */
+function get_platform_fee_percent($pdo): float {
+    return (float) get_platform_setting($pdo, 'platform_fee_percent', PLATFORM_FEE_PERCENT);
 }
 
 /**
@@ -84,14 +103,14 @@ function process_payment($pdo, $from_user_id, $to_user_id, $type, $amount, $desc
         }
         
         // Apply subscription discount if applicable
-        $final_amount = $amount;
+        $final_amount    = $amount;
         $discount_amount = 0;
-        
+        $fee_percent     = get_platform_fee_percent($pdo);   // ← from DB
+
         if ($apply_subscription_discount && $to_user_id) {
             if (has_active_platform_subscription($pdo, $from_user_id)) {
-                $discount_rate = get_subscription_discount_rate($pdo);
-                $discount_amount = $amount * ($discount_rate / 100);
-                $final_amount = $amount - $discount_amount;
+                $discount_amount = $amount * ($fee_percent / 100);
+                $final_amount    = $amount - $discount_amount;
             }
         }
         
@@ -107,8 +126,8 @@ function process_payment($pdo, $from_user_id, $to_user_id, $type, $amount, $desc
         // Process payment based on type
         if ($to_user_id && in_array($type, ['session_payment', 'course_payment'])) {
             // Teacher payment - split between teacher and platform
-            $commission_rate = get_platform_commission_rate($pdo);
-            $platform_fee = $final_amount * ($commission_rate / 100);
+            $fee_percent     = get_platform_fee_percent($pdo);
+            $platform_fee    = $final_amount * ($fee_percent / 100);
             $teacher_earning = $final_amount - $platform_fee;
             
             // Add to teacher wallet

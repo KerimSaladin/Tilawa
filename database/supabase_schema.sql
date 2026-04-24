@@ -337,3 +337,22 @@ ON CONFLICT DO NOTHING;
 INSERT INTO users (email, password_hash, full_name, user_type) VALUES
     ('admin@rattil.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin')
 ON CONFLICT (email) DO NOTHING;
+
+-- ── Migration: dynamic platform settings ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS platform_settings (
+    key   VARCHAR(100) PRIMARY KEY,
+    value TEXT        NOT NULL,
+    label VARCHAR(200),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO platform_settings (key, value, label)
+VALUES
+    ('platform_fee_percent', '15',    'نسبة عمولة المنصة (%)'),
+    ('min_topup',            '100',   'الحد الأدنى للشحن (دج)'),
+    ('max_topup',            '100000','الحد الأقصى للشحن (دج)'),
+    ('min_payout',           '500',   'الحد الأدنى للسحب (دج)')
+ON CONFLICT (key) DO NOTHING;
+
+-- ── Migration: description column on subscriptions ────────────────────────────
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS description TEXT;

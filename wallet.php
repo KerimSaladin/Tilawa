@@ -2,7 +2,6 @@
 require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/payment.php';
-require_once 'includes/platform_settings.php';
 
 require_login();
 $user = get_logged_in_user($pdo);
@@ -11,15 +10,20 @@ if (!$user) redirect('login.php');
 // المعلمون لا يحتاجون المحفظة للاشتراك — لكن يرون أرباحهم
 // شحن المحفظة
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['top_up'])) {
-    $amount = (float)$_POST['amount'];
-    $wallet_limits = get_wallet_limits($pdo);
-    if ($amount < $wallet_limits['min'] || $amount > $wallet_limits['max']) {
-        $_SESSION['flash_error'] = 'المبلغ يجب أن يكون بين ' . number_format($wallet_limits['min'], 0, '.', ',') . ' و ' . number_format($wallet_limits['max'], 0, '.', ',') . ' دج';
+    $amount = (float)($_POST['amount'] ?? 0);
+    $min    = (float) get_platform_setting($pdo, 'min_topup', 100);
+    $max    = (float) get_platform_setting($pdo, 'max_topup', 100000);
+
+    if ($amount < $min) {
+        $_SESSION['flash_error'] = "الحد الأدنى للشحن هو " . number_format($min, 0, '.', ',') . " دج";
+    } elseif ($amount > $max) {
+        $_SESSION['flash_error'] = "الحد الأقصى للشحن هو " . number_format($max, 0, '.', ',') . " دج";
     } else {
+        $amount = round($amount, 2);
         $pdo->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?")->execute([$amount, $user['id']]);
         $pdo->prepare("INSERT INTO transactions (from_user_id, type, amount, description, status) VALUES (?,?,?,?,'completed')")
             ->execute([$user['id'], 'top_up', $amount, 'شحن المحفظة: ' . number_format($amount, 0, '.', ',') . ' دج']);
-        $_SESSION['flash_success'] = 'تم شحن المحفظة بنجاح!';
+        $_SESSION['flash_success'] = 'تم شحن المحفظة بنجاح بمبلغ ' . number_format($amount, 0, '.', ',') . ' دج!';
     }
     redirect('wallet.php');
 }
@@ -31,8 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout']) && 
     $bank_rib      = trim($_POST['bank_rib'] ?? '');
     $bank_name     = trim($_POST['bank_name'] ?? '');
     $current_bal   = get_wallet_balance($pdo, $user['id']);
-    if ($payout_amount < 500) {
-        $_SESSION['flash_error'] = 'الحد الأدنى للسحب 500 دج';
+    $payout_min_v  = (float) get_platform_setting($pdo, 'min_payout', 500);
+    if ($payout_amount < $payout_min_v) {
+        $_SESSION['flash_error'] = 'الحد الأدنى للسحب ' . number_format($payout_min_v,0,'.',',') . ' دج';
     } elseif ($payout_amount > $current_bal) {
         $_SESSION['flash_error'] = 'المبلغ أكبر من رصيدك المتاح';
     } elseif (!$bank_holder || !$bank_rib || !$bank_name) {
@@ -48,9 +53,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_payout']) && 
 }
 
 $wallet_balance = get_wallet_balance($pdo, $user['id']);
-$wallet_limits = get_wallet_limits($pdo);
 $transactions   = get_transaction_history($pdo, $user['id'], $user['user_type'], 15);
-$active_page = 'wallet';
+$active_page    = 'wallet';
+
+// Limits from DB (admin-configurable)
+$topup_min = (int) get_platform_setting($pdo, 'min_topup', 100);
+$topup_max = (int) get_platform_setting($pdo, 'max_topup', 100000);
+$payout_min = (int) get_platform_setting($pdo, 'min_payout', 500);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -68,12 +77,8 @@ $active_page = 'wallet';
         .topup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-top:1.5rem}
         .topup-btn{background:white;border:2px solid var(--sand);border-radius:var(--radius-lg);padding:1.5rem;cursor:pointer;text-align:center;transition:var(--transition-bounce);font-family:inherit}
         .topup-btn:hover{border-color:var(--soft-blue);transform:translateY(-4px);box-shadow:var(--shadow-md)}
-        .quick-select-btn{background:white;border:2px solid var(--sand);border-radius:var(--radius-lg);padding:1rem;cursor:pointer;text-align:center;transition:var(--transition-bounce);font-family:inherit}
-        .quick-select-btn:hover{border-color:var(--soft-blue);transform:translateY(-2px);box-shadow:var(--shadow-md)}
-        .quick-select-btn.selected{border-color:var(--royal-blue);background:var(--soft-blue);color:var(--royal-blue)}
-        .quick-select-btn .amount{display:block;font-size:1.2rem;font-weight:800;color:var(--royal-blue)}
-        .quick-select-btn.selected .amount{color:var(--royal-blue)}
-        .quick-select-btn .label{font-size:.8rem;color:var(--slate);margin-top:.2rem}
+        .topup-btn .amount{display:block;font-size:1.5rem;font-weight:800;color:var(--royal-blue)}
+        .topup-btn .label{font-size:.85rem;color:var(--slate);margin-top:.2rem}
         .tx-table{width:100%;border-collapse:collapse}
         .tx-table th{background:var(--warm-cream);padding:.75rem 1rem;text-align:right;font-size:.85rem;color:var(--slate);font-weight:600}
         .tx-table td{padding:.75rem 1rem;border-bottom:1px solid var(--sand);font-size:.9rem}
@@ -118,54 +123,43 @@ $active_page = 'wallet';
 <!-- شحن المحفظة -->
 <div class="section-card">
     <h3>💳 شحن المحفظة</h3>
-    <p style="color:var(--slate);font-size:.9rem;margin-bottom:1.25rem">أدخل المبلغ المطلوب أو اختر من المقترحات السريعة</p>
-    
-    <!-- Custom amount input -->
-    <div style="margin-bottom:1.5rem">
-        <label style="font-size:.9rem;font-weight:600;display:block;margin-bottom:.5rem;color:var(--charcoal)">المبلغ (دج)</label>
-        <div style="display:flex;gap:0.75rem;align-items:flex-end">
-            <input type="number" id="custom_amount" class="form-input" 
-                   placeholder="أدخل المبلغ" 
-                   min="<?php echo $wallet_limits['min']; ?>" 
-                   max="<?php echo $wallet_limits['max']; ?>" 
-                   step="100" 
-                   style="flex:1;min-width:200px"
-                   oninput="updateQuickSelectButtons()">
-            <button type="button" class="btn btn-primary" onclick="openCardModalWithCustomAmount()">
-                شحن
-            </button>
+    <p style="color:var(--slate);font-size:.9rem;margin-bottom:1.25rem">
+        أدخل المبلغ الذي تريد شحنه أو اختر من المبالغ السريعة أدناه
+        <span style="color:#94a3b8"> (الحد الأدنى: <?php echo number_format($topup_min,0,'.',','); ?> دج — الأقصى: <?php echo number_format($topup_max,0,'.',','); ?> دج)</span>
+    </p>
+
+    <!-- حقل المبلغ الحر -->
+    <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1.25rem">
+        <div style="flex:1;min-width:180px">
+            <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">المبلغ (دج)</label>
+            <input type="number" id="topupAmount"
+                   min="<?php echo $topup_min; ?>" max="<?php echo $topup_max; ?>"
+                   step="100" placeholder="أدخل المبلغ..."
+                   oninput="syncTopupAmount(this.value)"
+                   style="padding:.75rem 1rem;border:2px solid var(--sand);border-radius:var(--radius-lg);font-size:1.1rem;font-weight:700;width:100%;color:var(--royal-blue);transition:border-color .2s"
+                   onfocus="this.style.borderColor='var(--royal-blue)'"
+                   onblur="this.style.borderColor='var(--sand)'">
         </div>
-        <small style="color:#94a3b8;display:block;margin-top:.25rem">
-            الحد الأدنى: <?php echo number_format($wallet_limits['min'],0,'.',','); ?> دج / 
-            الحد الأقصى: <?php echo number_format($wallet_limits['max'],0,'.',','); ?> دج
-        </small>
+        <button type="button" class="btn btn-primary" onclick="openCardModal()"
+                style="padding:.75rem 2rem;font-size:1rem;white-space:nowrap">
+            شحن الآن ←
+        </button>
     </div>
-    
-    <!-- Quick select buttons -->
-    <div style="margin-bottom:1rem">
-        <div style="font-size:.85rem;color:var(--slate);margin-bottom:.75rem">مقترحات سريعة:</div>
-        <div class="topup-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
-            <button type="button" class="quick-select-btn" data-amount="1000" onclick="selectQuickAmount(1000)">
-                <span class="amount">+1,000</span>
-                <span class="label">دج</span>
-            </button>
-            <button type="button" class="quick-select-btn" data-amount="2000" onclick="selectQuickAmount(2000)">
-                <span class="amount">+2,000</span>
-                <span class="label">دج</span>
-            </button>
-            <button type="button" class="quick-select-btn" data-amount="5000" onclick="selectQuickAmount(5000)">
-                <span class="amount">+5,000</span>
-                <span class="label">دج</span>
-            </button>
-            <button type="button" class="quick-select-btn" data-amount="10000" onclick="selectQuickAmount(10000)">
-                <span class="amount">+10,000</span>
-                <span class="label">دج</span>
-            </button>
-            <button type="button" class="quick-select-btn" data-amount="20000" onclick="selectQuickAmount(20000)">
-                <span class="amount">+20,000</span>
-                <span class="label">دج</span>
-            </button>
-        </div>
+
+    <!-- أزرار المبالغ السريعة (تملأ الحقل فقط، لا تُرسل) -->
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:.5rem">
+        <span style="font-size:.85rem;color:var(--slate);align-self:center;font-weight:600">مبالغ سريعة:</span>
+        <?php foreach ([500,1000,2000,5000,10000,20000] as $preset): ?>
+        <?php if ($preset >= $topup_min && $preset <= $topup_max): ?>
+        <button type="button"
+                onclick="setTopupAmount(<?php echo $preset; ?>)"
+                style="background:white;border:2px solid var(--sand);border-radius:50px;padding:.35rem .9rem;cursor:pointer;font-size:.88rem;font-weight:700;color:var(--royal-blue);transition:all .15s"
+                onmouseover="this.style.borderColor='var(--royal-blue)';this.style.background='#eff6ff'"
+                onmouseout="this.style.borderColor='var(--sand)';this.style.background='white'">
+            +<?php echo number_format($preset,0,'.',','); ?> دج
+        </button>
+        <?php endif; ?>
+        <?php endforeach; ?>
     </div>
 </div>
 
@@ -176,7 +170,7 @@ $active_page = 'wallet';
             <h3 style="margin:0;font-size:1.1rem">💳 إدخال بيانات البطاقة</h3>
             <button onclick="closeCardModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#94a3b8">✕</button>
         </div>
-        <div id="card_amount_display" style="background:linear-gradient(135deg,var(--deep-blue),var(--royal-blue));border-radius:12px;padding:1rem;color:#fff;text-align:center;margin-bottom:1.25rem">
+        <div style="background:linear-gradient(135deg,var(--deep-blue),var(--royal-blue));border-radius:12px;padding:1rem;color:#fff;text-align:center;margin-bottom:1.25rem">
             <div style="font-size:.85rem;opacity:.8">المبلغ المراد شحنه</div>
             <div id="card_amount_val" style="font-size:2rem;font-weight:900">0 دج</div>
         </div>
@@ -206,41 +200,37 @@ $active_page = 'wallet';
     </div>
 </div>
 <script>
-function selectQuickAmount(amount) {
-    document.getElementById('custom_amount').value = amount;
-    updateQuickSelectButtons();
-}
+const TOPUP_MIN = <?php echo $topup_min; ?>;
+const TOPUP_MAX = <?php echo $topup_max; ?>;
 
-function updateQuickSelectButtons() {
-    const customAmount = parseFloat(document.getElementById('custom_amount').value) || 0;
-    const buttons = document.querySelectorAll('.quick-select-btn');
-    
-    buttons.forEach(btn => {
-        const btnAmount = parseFloat(btn.dataset.amount);
-        if (Math.abs(customAmount - btnAmount) < 0.01) {
-            btn.classList.add('selected');
-        } else {
-            btn.classList.remove('selected');
-        }
-    });
+function setTopupAmount(val) {
+    document.getElementById('topupAmount').value = val;
+    syncTopupAmount(val);
 }
-
-function openCardModalWithCustomAmount() {
-    const amount = parseFloat(document.getElementById('custom_amount').value);
-    
-    if (!amount || amount < <?php echo $wallet_limits['min']; ?> || amount > <?php echo $wallet_limits['max']; ?>) {
-        alert('المبلغ يجب أن يكون بين <?php echo number_format($wallet_limits['min'],0,'.',','); ?> و <?php echo number_format($wallet_limits['max'],0,'.',','); ?> دج');
+function syncTopupAmount(val) {
+    // Live preview in modal header if open
+    const v = parseFloat(val) || 0;
+    document.getElementById('card_amount_val').textContent = v.toLocaleString('ar-DZ') + ' دج';
+    document.getElementById('card_hidden_amount').value = v;
+}
+function openCardModal() {
+    const inp = document.getElementById('topupAmount');
+    const val = parseFloat(inp.value) || 0;
+    if (!val || val < TOPUP_MIN) {
+        inp.focus();
+        inp.style.borderColor = '#dc2626';
+        setTimeout(() => inp.style.borderColor = 'var(--sand)', 2000);
+        alert('الرجاء إدخال مبلغ صحيح (الحد الأدنى: ' + TOPUP_MIN.toLocaleString('ar-DZ') + ' دج)');
         return;
     }
-    
-    openCardModal(amount);
-}
-
-function openCardModal(amount) {
-    document.getElementById('card_amount_val').textContent = amount.toLocaleString('ar') + ' دج';
-    document.getElementById('card_hidden_amount').value = amount;
-    const m = document.getElementById('cardModal');
-    m.style.display = 'flex';
+    if (val > TOPUP_MAX) {
+        inp.focus();
+        alert('المبلغ يتجاوز الحد الأقصى: ' + TOPUP_MAX.toLocaleString('ar-DZ') + ' دج');
+        return;
+    }
+    document.getElementById('card_amount_val').textContent = val.toLocaleString('ar-DZ') + ' دج';
+    document.getElementById('card_hidden_amount').value = val;
+    document.getElementById('cardModal').style.display = 'flex';
 }
 function closeCardModal() { document.getElementById('cardModal').style.display = 'none'; }
 function formatCardNum(el) {
@@ -259,21 +249,10 @@ function validateCard() {
     if (num.length < 13) { alert('رقم البطاقة غير صحيح'); return false; }
     if (!/^\d{2}\/\d{2}$/.test(exp)) { alert('تاريخ الانتهاء غير صحيح'); return false; }
     if (cvc.length < 3) { alert('رمز الأمان غير صحيح'); return false; }
-    
-    // Validate amount again
-    const amount = parseFloat(document.getElementById('card_hidden_amount').value);
-    if (!amount || amount < <?php echo $wallet_limits['min']; ?> || amount > <?php echo $wallet_limits['max']; ?>) {
-        alert('المبلغ غير صحيح');
-        return false;
-    }
-    
     return true;
 }
-document.getElementById('cardModal').addEventListener('click', e => { if(e.target===document.getElementById('cardModal')) closeCardModal(); });
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    updateQuickSelectButtons();
+document.getElementById('cardModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('cardModal')) closeCardModal();
 });
 </script>
 <?php endif; ?>
@@ -291,15 +270,15 @@ document.addEventListener('DOMContentLoaded', function() {
             <div style="font-size:.88rem;color:var(--slate)">رصيد متاح للسحب</div>
             <div style="font-size:2rem;font-weight:900;color:var(--secondary-green)"><?php echo number_format($wallet_balance,0,'.',','); ?> دج</div>
         </div>
-        <?php if ($wallet_balance >= 500): ?>
+        <?php if ($wallet_balance >= $payout_min): ?>
         <button onclick="document.getElementById('payoutModal').style.display='flex'" class="btn btn-primary">طلب سحب الأرباح</button>
         <?php else: ?>
-        <span style="font-size:.85rem;color:#94a3b8">الحد الأدنى للسحب: 500 دج</span>
+        <span style="font-size:.85rem;color:#94a3b8">الحد الأدنى للسحب: <?php echo number_format($payout_min,0,'.',','); ?> دج</span>
         <?php endif; ?>
     </div>
     <div style="font-size:.85rem;color:var(--slate)">
         <p>📌 تتم معالجة طلبات السحب خلال 2-5 أيام عمل.</p>
-        <p>📌 يُحتجز 15% عمولة المنصة من كل جلسة.</p>
+        <p>📌 يُحتجز <?php echo number_format(get_platform_fee_percent($pdo),1); ?>% عمولة المنصة من كل جلسة.</p>
     </div>
 </div>
 
@@ -326,9 +305,10 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="form-group" style="margin-bottom:1.25rem">
                 <label style="font-size:.88rem;font-weight:600;display:block;margin-bottom:.4rem">المبلغ المراد سحبه (دج)</label>
-                <input type="number" name="payout_amount" class="form-input" min="500" max="<?php echo $wallet_balance; ?>"
+                <input type="number" name="payout_amount" class="form-input"
+                       min="<?php echo $payout_min; ?>" max="<?php echo $wallet_balance; ?>"
                        value="<?php echo $wallet_balance; ?>" required>
-                <small style="color:#94a3b8">الحد الأدنى: 500 دج / الحد الأقصى: <?php echo number_format($wallet_balance,0,'.',','); ?> دج</small>
+                <small style="color:#94a3b8">الحد الأدنى: <?php echo number_format($payout_min,0,'.',','); ?> دج / الحد الأقصى: <?php echo number_format($wallet_balance,0,'.',','); ?> دج</small>
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%">تقديم طلب السحب</button>
         </form>
