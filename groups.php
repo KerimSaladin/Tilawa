@@ -548,124 +548,145 @@ $all_students = $stmt->fetchAll();
             <div class="groups-list">
                 <?php if (count($groups) > 0): ?>
                     <?php foreach ($groups as $group): ?>
-                    <div class="group-card">
-                        <div class="group-header">
-                            <div>
-                                <h3 class="group-title">
-                                    <?php echo htmlspecialchars($group['name']); ?>
-                                    <button class="edit-btn" onclick="openEditModal(<?php echo $group['id']; ?>, '<?php echo htmlspecialchars(addslashes($group['description'])); ?>')">
-                                        (تعديل الوصف)
-                                    </button>
-                                </h3>
-                                <?php if ($group['description']): ?>
-                                    <p class="group-description"><?php echo htmlspecialchars($group['description']); ?></p>
-                                <?php endif; ?>
-                            </div>
-                            <span style="color: #999; font-size: 0.9rem;">
-                                <?php echo count($group['students']); ?> طالب
-                            </span>
-                        </div>
-                        
-                        <!-- Group Stats -->
-                        <div class="group-stats">
-                            <div class="stat-item">
-                                <span class="stat-value"><?php echo $group['total_recitations']; ?></span>
-                                <span class="stat-label">إجمالي التلاوات</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value"><?php echo $group['total_memorized']; ?></span>
-                                <span class="stat-label">آية محفوظة</span>
-                            </div>
-                        </div>
-                        
-                        <!-- Leaderboard -->
-                        <?php if (count($group['leaderboard']) > 0 && $group['leaderboard'][0]['total_memorized'] > 0): ?>
-                        <div class="leaderboard">
-                            <div class="leaderboard-title">🏆 المتصدرون</div>
-                            <?php foreach ($group['leaderboard'] as $index => $student): ?>
-                                <?php if ($student['total_memorized'] > 0): ?>
-                                <div class="leaderboard-item">
-                                    <div style="display: flex; align-items: center;">
-                                        <span class="rank-badge rank-<?php echo $index + 1; ?>"><?php echo $index + 1; ?></span>
-                                        <span><?php echo htmlspecialchars($student['full_name']); ?></span>
-                                    </div>
-                                    <span style="font-weight: bold; color: var(--dark-blue);"><?php echo $student['total_memorized']; ?> آية</span>
-                                </div>
-                                <?php endif; ?>
-                            <?php endforeach; ?>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <!-- Students in this group -->
-                        <div class="students-list">
-                            <h4 style="margin-bottom: 0.75rem; color: var(--muted-blue);">الطلاب في هذه المجموعة:</h4>
-                            <?php if (count($group['students']) > 0): ?>
-                                <?php foreach ($group['students'] as $student): ?>
-                                <div class="student-item">
-                                    <div>
-                                        <strong><?php echo htmlspecialchars($student['full_name']); ?></strong>
-                                        <div style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
-                                            <span>حفظ: <?php echo $student['total_memorized']; ?> آية</span>
-                                            <span style="margin: 0 0.5rem;">|</span>
-                                            <span>تلاوات: <?php echo $student['total_recitations']; ?></span>
-                                        </div>
-                                    </div>
-                                    <div style="display: flex; gap: 0.5rem;">
-                                        <a href="messages.php?user=<?php echo $student['id']; ?>" class="message-btn">
-                                            💬 مراسلة
-                                        </a>
-                                        <button class="btn-remove" onclick="removeStudent(<?php echo $group['id']; ?>, <?php echo $student['id']; ?>)">
-                                            إزالة
-                                        </button>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <p style="color: #999; text-align: center; padding: 1rem;">لا يوجد طلاب في هذه المجموعة</p>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <!-- Add Student Form -->
-                        <div class="add-student-form">
-                            <h4 style="margin-bottom: 0.75rem; color: var(--muted-blue);">إضافة طالب:</h4>
-                            <?php if (!empty($user['gender'])): ?>
-                                <p style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
-                                    <strong>ملاحظة:</strong> يمكنك إضافة <?php echo $user['gender'] === 'male' ? 'الطلاب الذكور' : 'الطالبات الإناث'; ?> الذين دفعوا لك فقط.
-                                </p>
-                            <?php endif; ?>
-                            <?php if (empty($all_students)): ?>
-                                <p style="font-size:.9rem;color:var(--slate);padding:.75rem;background:var(--warm-cream);border-radius:var(--radius-md)">
-                                    لا يوجد طلاب مؤهلون للإضافة. الطلاب يظهرون هنا بعد إتمام الدفع لك.
-                                </p>
-                            <?php else: ?>
-                            <form method="POST" action="api/manage_group.php" style="display: flex; gap: 0.5rem; align-items: flex-end;">
-                                <input type="hidden" name="action" value="add_student">
-                                <input type="hidden" name="group_id" value="<?php echo $group['id']; ?>">
-                                <select name="student_id" class="form-input" required style="flex: 1;">
-                                    <option value="">اختر طالب...</option>
-                                    <?php foreach ($all_students as $student): ?>
-                                        <?php
-                                        $is_in_group = false;
-                                        foreach ($group['students'] as $group_student) {
-                                            if ($group_student['id'] == $student['id']) {
-                                                $is_in_group = true;
-                                                break;
-                                            }
-                                        }
-                                        if (!$is_in_group):
-                                        ?>
-                                        <option value="<?php echo $student['id']; ?>">
-                                            <?php echo htmlspecialchars($student['full_name'] . ' (' . $student['email'] . ')'); ?>
-                                        </option>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </select>
-                                <button type="submit" class="btn btn-primary">إضافة</button>
-                            </form>
-                            <?php endif; ?>
+    <div class="group-card">
+        <div class="group-header">
+            <div>
+                <h3 class="group-title">
+                    <?php echo htmlspecialchars($group['name']); ?>
+                    <button 
+                        class="edit-btn" 
+                        onclick="openEditModal(<?php echo $group['id']; ?>, '<?php echo htmlspecialchars(addslashes($group['description'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>')">
+                        (تعديل الوصف)
+                    </button>
+                </h3>
+                
+                <?php if (!empty($group['description'])): ?>
+                    <p class="group-description">
+                        <?php echo nl2br(htmlspecialchars($group['description'])); ?>
+                    </p>
+                <?php endif; ?>
+            </div>
+            
+            <span style="color: #999; font-size: 0.9rem;">
+                <?php echo count($group['students']); ?> طالب
+            </span>
+        </div>
+        
+        <!-- Group Stats -->
+        <div class="group-stats">
+            <div class="stat-item">
+                <span class="stat-value"><?php echo (int)$group['total_recitations']; ?></span>
+                <span class="stat-label">إجمالي التلاوات</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value"><?php echo (int)$group['total_memorized']; ?></span>
+                <span class="stat-label">آية محفوظة</span>
+            </div>
+        </div>
+        
+        <!-- Leaderboard -->
+        <?php if (!empty($group['leaderboard']) && $group['leaderboard'][0]['total_memorized'] > 0): ?>
+        <div class="leaderboard">
+            <div class="leaderboard-title">🏆 المتصدرون</div>
+            <?php foreach ($group['leaderboard'] as $index => $student): ?>
+                <?php if ($student['total_memorized'] > 0): ?>
+                <div class="leaderboard-item">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="rank-badge rank-<?php echo $index + 1; ?>">
+                            <?php echo $index + 1; ?>
+                        </span>
+                        <span><?php echo htmlspecialchars($student['full_name']); ?></span>
+                    </div>
+                    <span style="font-weight: bold; color: var(--dark-blue);">
+                        <?php echo (int)$student['total_memorized']; ?> آية
+                    </span>
+                </div>
+                <?php endif; ?>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        
+        <!-- Students List -->
+        <div class="students-list">
+            <h4 style="margin-bottom: 0.75rem; color: var(--muted-blue);">الطلاب في هذه المجموعة:</h4>
+            
+            <?php if (!empty($group['students'])): ?>
+                <?php foreach ($group['students'] as $student): ?>
+                <div class="student-item">
+                    <div>
+                        <strong><?php echo htmlspecialchars($student['full_name']); ?></strong>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
+                            <span>حفظ: <?php echo (int)$student['total_memorized']; ?> آية</span>
+                            <span style="margin: 0 0.5rem;">|</span>
+                            <span>تلاوات: <?php echo (int)$student['total_recitations']; ?></span>
                         </div>
                     </div>
-                    <?php endforeach; ?>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <a href="messages.php?user=<?php echo $student['id']; ?>" class="message-btn">
+                            💬 مراسلة
+                        </a>
+                        <button class="btn-remove" onclick="removeStudent(<?php echo $group['id']; ?>, <?php echo $student['id']; ?>)">
+                            إزالة
+                        </button>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p style="color: #999; text-align: center; padding: 1.5rem;">
+                    لا يوجد طلاب في هذه المجموعة حالياً
+                </p>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Add Student Section -->
+        <div class="add-student-form">
+            <h4 style="margin-bottom: 0.75rem; color: var(--muted-blue);">إضافة طالب:</h4>
+            
+            <?php if (!empty($user['gender'])): ?>
+                <p style="font-size: 0.9rem; color: #666; margin-bottom: 0.75rem;">
+                    <strong>ملاحظة:</strong> يمكنك إضافة 
+                    <?php echo $user['gender'] === 'male' ? 'الطلاب الذكور' : 'الطالبات الإناث'; ?> 
+                    الذين دفعوا لك فقط.
+                </p>
+            <?php endif; ?>
+            
+            <?php if (empty($all_students)): ?>
+                <p style="font-size: 0.9rem; color: var(--slate); padding: 1rem; background: var(--warm-cream); border-radius: var(--radius-md);">
+                    لا يوجد طلاب مؤهلون للإضافة حالياً.<br>
+                    <small>الطلاب يظهرون هنا بعد إتمام الدفع لك.</small>
+                </p>
+            <?php else: ?>
+                <form method="POST" action="api/manage_group.php" style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                    <input type="hidden" name="action" value="add_student">
+                    <input type="hidden" name="group_id" value="<?php echo $group['id']; ?>">
+                    
+                    <select name="student_id" class="form-input" required style="flex: 1;">
+                        <option value="">اختر طالب...</option>
+                        <?php foreach ($all_students as $student): ?>
+                            <?php
+                            // تحقق ما إذا كان الطالب موجوداً في المجموعة
+                            $is_in_group = false;
+                            foreach ($group['students'] as $group_student) {
+                                if ($group_student['id'] == $student['id']) {
+                                    $is_in_group = true;
+                                    break;
+                                }
+                            }
+                            if (!$is_in_group):
+                            ?>
+                            <option value="<?php echo $student['id']; ?>">
+                                <?php echo htmlspecialchars($student['full_name'] . ' (' . $student['email'] . ')'); ?>
+                            </option>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <button type="submit" class="btn btn-primary">إضافة</button>
+                </form>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endforeach; ?>
                 <?php else: ?>
                     <div class="empty-state">
                         <p>لا توجد مجموعات بعد. قم بإنشاء مجموعة جديدة أعلاه.</p>
