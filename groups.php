@@ -28,7 +28,7 @@ if (isset($_GET['success'])) {
 
 // Handle create group
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create') {
-    $group_name = sanitize_input($_POST['name'] ?? '');
+    $group_name = sanitize_input($_POST['group_name'] ?? '');
     $description = sanitize_input($_POST['description'] ?? '');
     
     if (empty($group_name)) {
