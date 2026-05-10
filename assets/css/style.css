@@ -278,7 +278,7 @@ header.scrolled {
 
 @media (max-width: 768px) {
     .site-logo {
-        height: 44px;
+        height: 100px;
     }
 }
 
