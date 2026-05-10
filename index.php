@@ -543,7 +543,7 @@ require_once $config_path;
         <div class="container">
             <div class="header-content">
                 <div class="logo">
-                    <img src="assets/images/images.png" alt="رتل معي" class="site-logo">
+                    <img src="assets/images/images.png" alt="رتل معي" class="site-logo" style="height = 100px, height = 100px">
                 </div>
                 <div class="nav-buttons">
                     <a href="register.php" class="btn btn-outline">تجربة مجانية</a>
