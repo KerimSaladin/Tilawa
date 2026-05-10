@@ -265,7 +265,7 @@ header.scrolled {
 }
 
 .site-logo {
-    height: 56px;
+    height: 100px;
     width: auto;
     display: block;
     transition: var(--transition-base);
