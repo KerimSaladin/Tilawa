@@ -232,7 +232,7 @@ header.scrolled {
 }
 
 .logo {
-    font-size: 1.75rem;
+    font-size: 3rem;
     font-weight: 900;
     font-family: var(--font-arabic);
     background: linear-gradient(135deg, var(--primary-green) 0%, var(--accent-green) 50%, var(--primary-gold) 100%);
@@ -265,7 +265,7 @@ header.scrolled {
 }
 
 .site-logo {
-    height: 100px;
+    height: 150px;
     width: auto;
     display: block;
     transition: var(--transition-base);
@@ -278,7 +278,7 @@ header.scrolled {
 
 @media (max-width: 768px) {
     .site-logo {
-        height: 100px;
+        height: 150px;
     }
 }
 
